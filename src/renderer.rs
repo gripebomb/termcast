@@ -254,6 +254,52 @@ pub fn render_forecast_hourly(
     stdout.flush()
 }
 
+/// Renders a static demo weather display using the given theme's colors.
+pub fn render_preview_theme(name: &str, colors: &ThemeColors) -> io::Result<()> {
+    let mut stdout = io::stdout();
+
+    // Weather demo
+    let _unit = "°C";
+    stdout.queue(SetForegroundColor(colors.text))?;
+    stdout.queue(Print("       \u{2600}\u{FE0F} 14\u{00B0}C Demo City\r\n"))?;
+    stdout.queue(SetForegroundColor(colors.dimmed))?;
+    stdout.queue(Print("     Feels 11\u{00B0}C\r\n"))?;
+    stdout.queue(SetForegroundColor(colors.temp_high))?;
+    stdout.queue(Print("     High 17\u{00B0}C"))?;
+    stdout.queue(SetForegroundColor(colors.text))?;
+    stdout.queue(Print(" \u{00B7} "))?;
+    stdout.queue(SetForegroundColor(colors.temp_low))?;
+    stdout.queue(Print("Low 8\u{00B0}C\r\n"))?;
+    stdout.queue(SetForegroundColor(colors.text))?;
+    stdout.queue(Print("     Clear skies and warm\r\n\r\n"))?;
+
+    // Forecast demo
+    stdout.queue(SetAttribute(Attribute::Bold))?;
+    stdout.queue(Print("       Forecast preview\r\n\r\n"))?;
+    stdout.queue(SetAttribute(Attribute::Reset))?;
+
+    stdout.queue(SetForegroundColor(colors.temp_high))?;
+    stdout.queue(Print("  Today     \u{2600}\u{FE0F}  17\u{00B0}C/8\u{00B0}C"))?;
+    stdout.queue(SetForegroundColor(colors.dimmed))?;
+    stdout.queue(Print("    \u{2602} 5%\r\n"))?;
+
+    stdout.queue(SetForegroundColor(colors.temp_low))?;
+    stdout.queue(Print("  Tomorrow  \u{26C5} 15\u{00B0}C/7\u{00B0}C"))?;
+    stdout.queue(SetForegroundColor(colors.precip_medium))?;
+    stdout.queue(Print("    \u{2602} 60%\r\n"))?;
+
+    stdout.queue(SetForegroundColor(colors.text))?;
+    stdout.queue(Print("  Wed       \u{1F327}\u{FE0F} 12\u{00B0}C/5\u{00B0}C"))?;
+    stdout.queue(SetForegroundColor(colors.precip_high))?;
+    stdout.queue(Print("    \u{2602} 85%\r\n"))?;
+
+    stdout.queue(Print("\r\n"))?;
+    stdout.queue(SetForegroundColor(colors.dimmed))?;
+    stdout.queue(Print(format!("  Theme: {}\r\n", name)))?;
+    stdout.queue(Print("\r\n"))?;
+    stdout.flush()
+}
+
 /// Outputs a compact one-line forecast for shell prompts/status bars.
 ///
 /// Format: `[icon] [high]/[low] ☂ [precip]% [day_name]`

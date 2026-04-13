@@ -48,6 +48,14 @@ struct Args {
     #[arg(long, hide = true)]
     list_locations: bool,
 
+    /// List available color themes with descriptions.
+    #[arg(long)]
+    list_themes: bool,
+
+    /// Preview a color theme with a demo weather display.
+    #[arg(long)]
+    preview_theme: Option<String>,
+
     /// Subcommand (forecast, completions).
     #[command(subcommand)]
     command: Option<Command>,
@@ -92,6 +100,33 @@ async fn run() -> Result<(), AppError> {
     // Handle --install flag
     if let Some(shell) = args.install {
         return install_shell_integration(&shell);
+    }
+
+    // Handle --list-themes
+    if args.list_themes {
+        for t in theme::builtin_themes() {
+            println!("  {:<18}{}", t.name, t.description);
+        }
+        return Ok(());
+    }
+
+    // Handle --preview-theme
+    if let Some(ref name) = args.preview_theme {
+        let themes = theme::builtin_themes();
+        let normalized = name.to_lowercase().replace('_', "-");
+        let found = themes.iter().find(|t| {
+            t.name == normalized || t.aliases.contains(&normalized.as_str())
+        });
+        return match found {
+            Some(t) => {
+                renderer::render_preview_theme(t.name, &t.colors)
+                    .map_err(|e| AppError::invalid_arg(format!("Render error: {}", e)))
+            }
+            None => Err(AppError::invalid_arg(format!(
+                "unknown theme '{}'. Use --list-themes to see available themes.",
+                name
+            ))),
+        };
     }
 
     // Handle completions subcommand
@@ -705,5 +740,24 @@ longitude = 10.75
         let args = Args::parse_from(&["termcast", "-l", "Oslo"]);
         assert!(args.command.is_none());
         assert_eq!(args.location, Some("Oslo".to_string()));
+    }
+
+    #[test]
+    fn test_list_themes_flag() {
+        let args = Args::parse_from(&["termcast", "--list-themes"]);
+        assert!(args.list_themes);
+    }
+
+    #[test]
+    fn test_preview_theme_flag() {
+        let args = Args::parse_from(&["termcast", "--preview-theme", "dracula"]);
+        assert_eq!(args.preview_theme, Some("dracula".to_string()));
+    }
+
+    #[test]
+    fn test_preview_theme_flag_missing() {
+        let args = Args::parse_from(&["termcast"]);
+        assert!(!args.list_themes);
+        assert!(args.preview_theme.is_none());
     }
 }
