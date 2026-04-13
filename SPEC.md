@@ -127,15 +127,34 @@ match code {
 
 ## Success Criteria
 
-1. [ ] `cargo build --release` compiles without warnings
-2. [ ] `cargo test` passes 100%
-3. [ ] `./target/release/termcast` outputs 4 lines of styled weather
-4. [ ] `./target/release/termcast --location Oslo` overrides IP location
-5. [ ] `./target/release/termcast --help` shows usage info
-6. [ ] Error on network failure renders styled error (not raw panic)
-7. [ ] Output contains ANSI color codes when piped through `cat`
-8. [ ] Binary runs without needing `cargo run` (static binary or linked lib)
-9. [ ] Output renders correctly in iTerm2 and macOS Terminal
+1. [x] `cargo build --release` compiles without warnings
+2. [x] `cargo test` passes 100%
+3. [x] `./target/release/termcast` outputs 4 lines of styled weather
+4. [x] `./target/release/termcast --location Oslo` overrides IP location
+5. [x] `./target/release/termcast --help` shows usage info
+6. [x] Error on network failure renders styled error (not raw panic)
+7. [x] Output contains ANSI color codes when piped through `cat`
+8. [x] Binary runs without needing `cargo run` (static binary or linked lib)
+9. [x] Output renders correctly in iTerm2 and macOS Terminal
+
+## Ambient Mode (Extended Feature)
+
+See [docs/SPEC-ambient.md](docs/SPEC-ambient.md) for the full ambient mode specification.
+
+**Quick reference:**
+
+```bash
+# Ambient mode — compact output for shell prompts
+./target/release/termcast --ambient          # Output: "☀️ 14°"
+
+# Cache TTL in minutes (default: 15)
+./target/release/termcast --cache-ttl 30
+
+# Shell integration snippets
+./target/release/termcast --install bash
+./target/release/termcast --install zsh
+./target/release/termcast --install tmux
+```
 
 ## Open Questions
 
@@ -144,3 +163,4 @@ match code {
 - ~~Error styling~~ — colorized (resolved)
 - ~~Temperature units~~ — auto-detect from locale (resolved)
 - ~~Rust edition~~ — 2021 (resolved)
+- ~~Ambient mode~~ — implemented (see docs/SPEC-ambient.md)
