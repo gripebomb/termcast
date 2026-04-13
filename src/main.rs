@@ -48,14 +48,29 @@ struct Args {
     #[arg(long, hide = true)]
     list_locations: bool,
 
-    /// Shell completions subcommand.
+    /// Subcommand (forecast, completions).
     #[command(subcommand)]
-    completions: Option<CompletionsCmd>,
+    command: Option<Command>,
 }
 
-/// Shell completions subcommand.
+/// Available subcommands.
 #[derive(Debug, Subcommand)]
-enum CompletionsCmd {
+enum Command {
+    /// Show multi-day weather forecast.
+    Forecast {
+        /// Number of forecast days (1-7).
+        #[arg(long, default_value = "5", value_parser = clap::value_parser!(u32).range(1..=7))]
+        days: u32,
+
+        /// Show hourly breakdown of notable weather changes.
+        #[arg(long)]
+        hourly: bool,
+
+        /// Output compact one-line forecast for shell prompts/status bars.
+        #[arg(long)]
+        ambient: bool,
+    },
+
     /// Generate shell completions.
     Completions {
         /// Shell to generate completions for.
@@ -80,8 +95,18 @@ async fn run() -> Result<(), AppError> {
     }
 
     // Handle completions subcommand
-    if let Some(CompletionsCmd::Completions { shell }) = args.completions {
+    if let Some(Command::Completions { shell }) = args.command {
         return generate_completions(&shell);
+    }
+
+    // Handle forecast subcommand
+    if let Some(Command::Forecast {
+        days,
+        hourly,
+        ambient,
+    }) = args.command
+    {
+        return run_forecast(&args, days, hourly, ambient).await;
     }
 
     // Load config
@@ -307,6 +332,50 @@ fn output_ambient_weather(weather_code: u32, temperature: f64, use_fahrenheit: b
     println!("{} {}{}", icon, temp, unit);
 }
 
+/// Runs the forecast subcommand: resolve location, fetch forecast, render output.
+async fn run_forecast(
+    args: &Args,
+    days: u32,
+    hourly: bool,
+    ambient: bool,
+) -> Result<(), AppError> {
+    let config_path = args.config.as_deref().map(Path::new);
+    let cfg = config::load_config(config_path);
+    let client = Client::new();
+
+    let config_use_fahrenheit = cfg.resolve_units();
+    let location_query = resolve_location_query(args, &cfg);
+
+    let (latitude, longitude, location_name, use_fahrenheit) =
+        resolve_full_location(&client, location_query.as_deref(), &cfg, config_use_fahrenheit)
+            .await?;
+
+    let display = client
+        .get_forecast(
+            latitude,
+            longitude,
+            &location_name,
+            use_fahrenheit,
+            days,
+            hourly,
+        )
+        .await?;
+
+    if ambient {
+        renderer::output_ambient_forecast(&display)
+            .map_err(|e| AppError::invalid_arg(format!("Render error: {}", e)))?;
+    } else {
+        renderer::render_forecast(&display)
+            .map_err(|e| AppError::invalid_arg(format!("Render error: {}", e)))?;
+        if hourly {
+            renderer::render_forecast_hourly(&display)
+                .map_err(|e| AppError::invalid_arg(format!("Render error: {}", e)))?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Generates shell completion scripts.
 fn generate_completions(shell: &str) -> Result<(), AppError> {
     let shell = match shell {
@@ -518,5 +587,97 @@ longitude = 10.75
         let cfg = termcast::config::Config::default();
         let result = super::resolve_location_query(&args, &cfg);
         assert!(result.is_none());
+    }
+
+    // --- Forecast subcommand tests ---
+
+    #[test]
+    fn test_forecast_default_args() {
+        let args = Args::parse_from(&["termcast", "forecast"]);
+        match args.command {
+            Some(super::Command::Forecast {
+                days,
+                hourly,
+                ambient,
+            }) => {
+                assert_eq!(days, 5);
+                assert!(!hourly);
+                assert!(!ambient);
+            }
+            _ => panic!("Expected Forecast subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_forecast_days() {
+        let args = Args::parse_from(&["termcast", "forecast", "--days", "3"]);
+        match args.command {
+            Some(super::Command::Forecast { days, .. }) => assert_eq!(days, 3),
+            _ => panic!("Expected Forecast subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_forecast_hourly() {
+        let args = Args::parse_from(&["termcast", "forecast", "--hourly"]);
+        match args.command {
+            Some(super::Command::Forecast { hourly, .. }) => assert!(hourly),
+            _ => panic!("Expected Forecast subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_forecast_ambient() {
+        let args = Args::parse_from(&["termcast", "forecast", "--ambient"]);
+        match args.command {
+            Some(super::Command::Forecast { ambient, .. }) => assert!(ambient),
+            _ => panic!("Expected Forecast subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_forecast_with_location() {
+        let args = Args::parse_from(&["termcast", "-l", "Oslo", "forecast", "--days", "7", "--hourly"]);
+        assert_eq!(args.location, Some("Oslo".to_string()));
+        match args.command {
+            Some(super::Command::Forecast {
+                days,
+                hourly,
+                ambient,
+            }) => {
+                assert_eq!(days, 7);
+                assert!(hourly);
+                assert!(!ambient);
+            }
+            _ => panic!("Expected Forecast subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_forecast_with_at() {
+        let args = Args::parse_from(&["termcast", "--at", "home", "forecast"]);
+        assert_eq!(args.at, Some("home".to_string()));
+        match args.command {
+            Some(super::Command::Forecast { .. }) => {}
+            _ => panic!("Expected Forecast subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_completions_still_works() {
+        let args = Args::parse_from(&["termcast", "completions", "bash"]);
+        match args.command {
+            Some(super::Command::Completions { shell }) => {
+                assert_eq!(shell, "bash");
+            }
+            _ => panic!("Expected Completions subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_no_subcommand_still_works() {
+        let args = Args::parse_from(&["termcast", "-l", "Oslo"]);
+        assert!(args.command.is_none());
+        assert_eq!(args.location, Some("Oslo".to_string()));
     }
 }
