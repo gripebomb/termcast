@@ -70,6 +70,22 @@ pub enum AppError {
         #[source]
         source: serde_json::Error,
     },
+
+    /// Config file read error.
+    #[error("Failed to read config from {path}: {source}")]
+    ConfigRead {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// Config file parse error (invalid TOML).
+    #[error("Failed to parse config from {path}: {source}")]
+    ConfigParse {
+        path: String,
+        #[source]
+        source: toml::de::Error,
+    },
 }
 
 impl AppError {
@@ -140,6 +156,24 @@ impl AppError {
     #[allow(dead_code)]
     pub fn cache_serialize(path: &std::path::Path, source: serde_json::Error) -> Self {
         Self::CacheSerialize {
+            path: path.to_string_lossy().to_string(),
+            source,
+        }
+    }
+
+    /// Creates a config read error.
+    #[allow(dead_code)]
+    pub fn config_read(path: &std::path::Path, source: std::io::Error) -> Self {
+        Self::ConfigRead {
+            path: path.to_string_lossy().to_string(),
+            source,
+        }
+    }
+
+    /// Creates a config parse error.
+    #[allow(dead_code)]
+    pub fn config_parse(path: &std::path::Path, source: toml::de::Error) -> Self {
+        Self::ConfigParse {
             path: path.to_string_lossy().to_string(),
             source,
         }

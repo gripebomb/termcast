@@ -53,7 +53,12 @@ impl Client {
             serde_json::from_str(&text).map_err(|e| AppError::parse(URL, "geolocation", e))?;
 
         let use_fahrenheit = geo.country_code == "US";
-        Ok((geo.latitude, geo.longitude, geo.location_name(), use_fahrenheit))
+        Ok((
+            geo.latitude,
+            geo.longitude,
+            geo.location_name(),
+            use_fahrenheit,
+        ))
     }
 
     /// Fetches weather data from Open-Meteo API.
@@ -66,7 +71,11 @@ impl Client {
         location: &str,
         use_fahrenheit: bool,
     ) -> Result<WeatherDisplay, AppError> {
-        let unit = if use_fahrenheit { "fahrenheit" } else { "celsius" };
+        let unit = if use_fahrenheit {
+            "fahrenheit"
+        } else {
+            "celsius"
+        };
         let url = format!(
             "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}&current_weather=true&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit={}&timezone=auto",
             latitude, longitude, unit
@@ -93,7 +102,11 @@ impl Client {
         let weather: WeatherResponse =
             serde_json::from_str(&text).map_err(|e| AppError::parse(&url, "weather", e))?;
 
-        Ok(WeatherDisplay::from_response(&weather, location, use_fahrenheit))
+        Ok(WeatherDisplay::from_response(
+            &weather,
+            location,
+            use_fahrenheit,
+        ))
     }
 
     /// Geocodes a location name to coordinates using Open-Meteo geocoding.

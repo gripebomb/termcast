@@ -3,8 +3,10 @@
 //! Provides weather information with aesthetic terminal output.
 //! Works out of the box with auto-detected location or with `--location` flag.
 
-use clap::Parser;
-use termcast::{api::Client, cache, errors::AppError, renderer, weather};
+use std::path::Path;
+
+use clap::{Parser, Subcommand};
+use termcast::{api::Client, cache, config, errors::AppError, renderer, weather};
 
 /// Command-line arguments for TermCast.
 #[derive(Parser, Debug)]
@@ -15,29 +17,55 @@ use termcast::{api::Client, cache, errors::AppError, renderer, weather};
 )]
 struct Args {
     /// Location to get weather for (city name or coordinates).
-    /// If not provided, uses IP-based geolocation.
+    /// If not provided, uses config default_location or IP-based geolocation.
     #[arg(short, long)]
     location: Option<String>,
+
+    /// Resolve a named or ad-hoc location for weather.
+    /// Checks saved locations first, falls back to geocoding.
+    #[arg(long)]
+    at: Option<String>,
 
     /// Run in ambient mode - output compact weather for shell prompts.
     /// Reads from cache first, fetches if stale or missing.
     #[arg(long)]
     ambient: bool,
 
-    /// Cache TTL in minutes for ambient mode (default: 15).
-    #[arg(long, default_value_t = 15)]
-    cache_ttl: u64,
+    /// Cache TTL in minutes for ambient mode (default: 15, overridden by config).
+    #[arg(long)]
+    cache_ttl: Option<u64>,
+
+    /// Path to config file (default: $XDG_CONFIG_HOME/termcast/config.toml).
+    #[arg(long)]
+    config: Option<String>,
 
     /// Install shell integration snippets.
     /// Output formats: bash, zsh, tmux, or all (default).
     #[arg(long, num_args(0..=1), default_missing_value = "all")]
     install: Option<String>,
+
+    /// List saved location names from config (one per line).
+    #[arg(long, hide = true)]
+    list_locations: bool,
+
+    /// Shell completions subcommand.
+    #[command(subcommand)]
+    completions: Option<CompletionsCmd>,
+}
+
+/// Shell completions subcommand.
+#[derive(Debug, Subcommand)]
+enum CompletionsCmd {
+    /// Generate shell completions.
+    Completions {
+        /// Shell to generate completions for.
+        shell: String,
+    },
 }
 
 #[tokio::main]
 async fn main() {
     if let Err(e) = run().await {
-        // Render styled error to stderr
         eprintln!("termcast: {}", e);
         std::process::exit(1);
     }
@@ -51,16 +79,53 @@ async fn run() -> Result<(), AppError> {
         return install_shell_integration(&shell);
     }
 
+    // Handle completions subcommand
+    if let Some(CompletionsCmd::Completions { shell }) = args.completions {
+        return generate_completions(&shell);
+    }
+
+    // Load config
+    let config_path = args.config.as_deref().map(Path::new);
+    let cfg = config::load_config(config_path);
+
+    // Handle --list-locations
+    if args.list_locations {
+        let mut names: Vec<&String> = cfg.locations.keys().collect();
+        names.sort();
+        for name in names {
+            println!("{}", name);
+        }
+        return Ok(());
+    }
+
+    // Resolve cache_ttl: CLI override > config > default (15)
+    let cache_ttl = args.cache_ttl.unwrap_or(cfg.defaults.cache_ttl);
+
     let client = Client::new();
     let cache_path = cache::cache_path();
 
+    // Resolve unit preference from config (None = auto via IP)
+    let config_use_fahrenheit = cfg.resolve_units();
+
+    // Resolve location query from CLI args and config
+    let location_query = resolve_location_query(&args, &cfg);
+
     // In ambient mode, try cache first
     if args.ambient {
-        return run_ambient_mode(&client, &cache_path, args.location.as_deref(), args.cache_ttl).await;
+        return run_ambient_mode(
+            &client,
+            &cache_path,
+            location_query.as_deref(),
+            cache_ttl,
+            config_use_fahrenheit,
+        )
+        .await;
     }
 
     // Regular mode: fetch weather, display, and cache
-    let (weather_data, latitude, longitude) = fetch_and_display_weather(&client, args.location.as_deref()).await?;
+    let (weather_data, latitude, longitude) =
+        fetch_and_display_weather(&client, location_query.as_deref(), config_use_fahrenheit)
+            .await?;
 
     // Write to cache
     write_weather_cache(&cache_path, &weather_data, latitude, longitude)?;
@@ -68,22 +133,95 @@ async fn run() -> Result<(), AppError> {
     Ok(())
 }
 
+/// Resolves the location query string from CLI args and config.
+///
+/// Precedence: --location > --at > config default_location
+/// Returns None if no location is specified (use IP geolocation).
+fn resolve_location_query(args: &Args, cfg: &config::Config) -> Option<String> {
+    // --location takes highest precedence
+    if let Some(ref loc) = args.location {
+        return Some(loc.clone());
+    }
+
+    // --at resolves against config locations, or is used as-is for geocoding
+    if let Some(ref name) = args.at {
+        if let Some(resolved) = cfg.resolve_location_query(name) {
+            return Some(resolved.city);
+        }
+        // No saved match — use the name as a geocoding query
+        return Some(name.clone());
+    }
+
+    // Config default_location
+    if cfg.defaults.default_location != "auto" {
+        if let Some(resolved) = cfg.resolve_location_query(&cfg.defaults.default_location) {
+            return Some(resolved.city);
+        }
+        return Some(cfg.defaults.default_location.clone());
+    }
+
+    None
+}
+
+/// Resolves a location string to coordinates, city name, and unit preference.
+///
+/// For saved config locations with coordinates, uses those directly.
+/// Otherwise geocodes the query via API. Falls back to IP geolocation if no query.
+async fn resolve_full_location(
+    client: &Client,
+    query: Option<&str>,
+    cfg: &config::Config,
+    config_use_fahrenheit: Option<bool>,
+) -> Result<(f64, f64, String, bool), AppError> {
+    if let Some(q) = query {
+        // Check if it matches a saved location with coordinates
+        if let Some(resolved) = cfg.resolve_location_query(q) {
+            if let (Some(lat), Some(lon)) = (resolved.latitude, resolved.longitude) {
+                let use_fahrenheit = if let Some(pref) = config_use_fahrenheit {
+                    pref
+                } else {
+                    let (_, _, _, ip_f) = client.get_location().await?;
+                    ip_f
+                };
+                return Ok((lat, lon, resolved.city, use_fahrenheit));
+            }
+            // Saved location but no coordinates — geocode the city name
+            let (lat, lon, name) = client.geocode_location(&resolved.city).await?;
+            let use_fahrenheit = determine_units(client, config_use_fahrenheit).await?;
+            return Ok((lat, lon, name, use_fahrenheit));
+        }
+
+        // Not a saved location — geocode directly
+        let (lat, lon, name) = client.geocode_location(q).await?;
+        let use_fahrenheit = determine_units(client, config_use_fahrenheit).await?;
+        return Ok((lat, lon, name, use_fahrenheit));
+    }
+
+    // No query — IP geolocation
+    client.get_location().await
+}
+
+/// Determines Fahrenheit preference from config or IP geolocation.
+async fn determine_units(
+    client: &Client,
+    config_use_fahrenheit: Option<bool>,
+) -> Result<bool, AppError> {
+    if let Some(pref) = config_use_fahrenheit {
+        return Ok(pref);
+    }
+    let (_, _, _, ip_f) = client.get_location().await?;
+    Ok(ip_f)
+}
+
 /// Fetches weather data and displays it in the terminal.
 async fn fetch_and_display_weather(
     client: &Client,
     location: Option<&str>,
+    config_use_fahrenheit: Option<bool>,
 ) -> Result<(termcast::weather::WeatherDisplay, f64, f64), AppError> {
-    // Get location (either from CLI or auto-detect)
-    let (latitude, longitude, location_name, use_fahrenheit) = if let Some(loc) = location {
-        // Geocode the provided location
-        let (lat, lon, name) = client.geocode_location(loc).await?;
-        // Determine unit from IP geolocation, not the searched location
-        let (_, _, _, ip_use_fahrenheit) = client.get_location().await?;
-        (lat, lon, name, ip_use_fahrenheit)
-    } else {
-        // Auto-detect via IP
-        client.get_location().await?
-    };
+    let cfg = config::load_config(None);
+    let (latitude, longitude, location_name, use_fahrenheit) =
+        resolve_full_location(client, location, &cfg, config_use_fahrenheit).await?;
 
     // Get weather data
     let weather_data = client
@@ -125,6 +263,7 @@ async fn run_ambient_mode(
     cache_path: &std::path::Path,
     location: Option<&str>,
     cache_ttl_minutes: u64,
+    config_use_fahrenheit: Option<bool>,
 ) -> Result<(), AppError> {
     let ttl_secs = (cache_ttl_minutes * 60) as i64;
 
@@ -139,15 +278,9 @@ async fn run_ambient_mode(
     }
 
     // Cache missing or stale - fetch fresh data
-    let (latitude, longitude, location_name, use_fahrenheit) = if let Some(loc) = location {
-        // Geocode the provided location
-        let (lat, lon, name) = client.geocode_location(loc).await?;
-        // Determine unit from IP geolocation
-        let (_, _, _, ip_use_fahrenheit) = client.get_location().await?;
-        (lat, lon, name, ip_use_fahrenheit)
-    } else {
-        client.get_location().await?
-    };
+    let cfg = config::load_config(None);
+    let (latitude, longitude, location_name, use_fahrenheit) =
+        resolve_full_location(client, location, &cfg, config_use_fahrenheit).await?;
 
     let weather_data = client
         .get_weather(latitude, longitude, &location_name, use_fahrenheit)
@@ -157,7 +290,11 @@ async fn run_ambient_mode(
     write_weather_cache(cache_path, &weather_data, latitude, longitude)?;
 
     // Output ambient format
-    output_ambient_weather(weather_data.weather_code, weather_data.temperature, weather_data.use_fahrenheit);
+    output_ambient_weather(
+        weather_data.weather_code,
+        weather_data.temperature,
+        weather_data.use_fahrenheit,
+    );
 
     Ok(())
 }
@@ -168,6 +305,29 @@ fn output_ambient_weather(weather_code: u32, temperature: f64, use_fahrenheit: b
     let temp = temperature as i32;
     let unit = if use_fahrenheit { "°F" } else { "°C" };
     println!("{} {}{}", icon, temp, unit);
+}
+
+/// Generates shell completion scripts.
+fn generate_completions(shell: &str) -> Result<(), AppError> {
+    let shell = match shell {
+        "bash" => clap_complete::Shell::Bash,
+        "zsh" => clap_complete::Shell::Zsh,
+        "fish" => clap_complete::Shell::Fish,
+        "elvish" => clap_complete::Shell::Elvish,
+        "powershell" => clap_complete::Shell::PowerShell,
+        _ => {
+            return Err(AppError::invalid_arg(format!(
+                "Unknown shell '{}'. Use: bash, zsh, fish, elvish, or powershell",
+                shell
+            )));
+        }
+    };
+
+    let mut app = <Args as clap::CommandFactory>::command();
+    let bin_name = "termcast".to_string();
+    clap_complete::generate(shell, &mut app, bin_name, &mut std::io::stdout());
+
+    Ok(())
 }
 
 /// Outputs shell integration snippets.
@@ -233,19 +393,21 @@ fn install_shell_integration(shell: &str) -> Result<(), AppError> {
 
 #[cfg(test)]
 mod tests {
-    use clap::Parser;
     use crate::Args;
+    use clap::Parser;
 
     #[test]
     fn test_args_parsing_no_location() {
         let args = Args::parse_from(&["termcast"]);
         assert!(args.location.is_none());
+        assert!(args.at.is_none());
     }
 
     #[test]
     fn test_args_parsing_with_location() {
         let args = Args::parse_from(&["termcast", "-l", "Oslo"]);
         assert_eq!(args.location, Some("Oslo".to_string()));
+        assert!(args.at.is_none());
     }
 
     #[test]
@@ -271,13 +433,13 @@ mod tests {
     #[test]
     fn test_args_cache_ttl_default() {
         let args = Args::parse_from(&["termcast"]);
-        assert_eq!(args.cache_ttl, 15);
+        assert!(args.cache_ttl.is_none());
     }
 
     #[test]
     fn test_args_cache_ttl_custom() {
         let args = Args::parse_from(&["termcast", "--cache-ttl", "30"]);
-        assert_eq!(args.cache_ttl, 30);
+        assert_eq!(args.cache_ttl, Some(30));
     }
 
     #[test]
@@ -289,6 +451,72 @@ mod tests {
     #[test]
     fn test_args_install_all() {
         let args = Args::parse_from(&["termcast", "--install"]);
-        assert_eq!(args.install, Some("all".to_string())); // defaults to "all"
+        assert_eq!(args.install, Some("all".to_string()));
+    }
+
+    #[test]
+    fn test_args_config_flag() {
+        let args = Args::parse_from(&["termcast", "--config", "/tmp/myconfig.toml"]);
+        assert_eq!(args.config, Some("/tmp/myconfig.toml".to_string()));
+    }
+
+    #[test]
+    fn test_args_at_flag() {
+        let args = Args::parse_from(&["termcast", "--at", "home"]);
+        assert_eq!(args.at, Some("home".to_string()));
+        assert!(args.location.is_none());
+    }
+
+    #[test]
+    fn test_args_list_locations() {
+        let args = Args::parse_from(&["termcast", "--list-locations"]);
+        assert!(args.list_locations);
+    }
+
+    #[test]
+    fn test_resolve_location_query_location_flag_wins() {
+        let args = Args::parse_from(&["termcast", "--location", "Oslo", "--at", "home"]);
+        let cfg = termcast::config::Config::default();
+        let result = super::resolve_location_query(&args, &cfg);
+        assert_eq!(result, Some("Oslo".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_location_query_at_flag_fallback() {
+        let args = Args::parse_from(&["termcast", "--at", "Chicago"]);
+        let cfg = termcast::config::Config::default();
+        let result = super::resolve_location_query(&args, &cfg);
+        assert_eq!(result, Some("Chicago".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_location_query_at_flag_resolves_saved() {
+        let args = Args::parse_from(&["termcast", "--at", "home"]);
+        let toml = r#"
+[locations.home]
+city = "Oslo"
+latitude = 59.91
+longitude = 10.75
+"#;
+        let cfg: termcast::config::Config = toml::from_str(toml).unwrap();
+        let result = super::resolve_location_query(&args, &cfg);
+        assert_eq!(result, Some("Oslo".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_location_query_config_default() {
+        let args = Args::parse_from(&["termcast"]);
+        let toml = "[defaults]\ndefault_location = \"Oslo\"\n";
+        let cfg: termcast::config::Config = toml::from_str(toml).unwrap();
+        let result = super::resolve_location_query(&args, &cfg);
+        assert_eq!(result, Some("Oslo".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_location_query_config_default_auto() {
+        let args = Args::parse_from(&["termcast"]);
+        let cfg = termcast::config::Config::default();
+        let result = super::resolve_location_query(&args, &cfg);
+        assert!(result.is_none());
     }
 }

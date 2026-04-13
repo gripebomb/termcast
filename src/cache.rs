@@ -81,8 +81,8 @@ pub fn read_cache(path: &Path) -> Result<Option<CacheEntry>, AppError> {
         Err(e) => return Err(AppError::cache_read(path, e)),
     };
 
-    let entry: CacheEntry = serde_json::from_str(&contents)
-        .map_err(|e| AppError::cache_parse(path, e))?;
+    let entry: CacheEntry =
+        serde_json::from_str(&contents).map_err(|e| AppError::cache_parse(path, e))?;
 
     Ok(Some(entry))
 }
@@ -92,15 +92,13 @@ pub fn read_cache(path: &Path) -> Result<Option<CacheEntry>, AppError> {
 /// Creates parent directories if they don't exist.
 pub fn write_cache(path: &Path, entry: &CacheEntry) -> Result<(), AppError> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| AppError::cache_write(path, e))?;
+        std::fs::create_dir_all(parent).map_err(|e| AppError::cache_write(path, e))?;
     }
 
-    let json = serde_json::to_string_pretty(entry)
-        .map_err(|e| AppError::cache_serialize(path, e))?;
+    let json =
+        serde_json::to_string_pretty(entry).map_err(|e| AppError::cache_serialize(path, e))?;
 
-    std::fs::write(path, json)
-        .map_err(|e| AppError::cache_write(path, e))
+    std::fs::write(path, json).map_err(|e| AppError::cache_write(path, e))
 }
 
 /// Checks if a cache entry is fresh based on the given TTL.
@@ -235,7 +233,14 @@ mod tests {
 
     #[test]
     fn test_roundtrip_serialization() {
-        let entry = CacheEntry::new(14.5, 3, "San Francisco, CA".to_string(), 37.77, -122.41, false);
+        let entry = CacheEntry::new(
+            14.5,
+            3,
+            "San Francisco, CA".to_string(),
+            37.77,
+            -122.41,
+            false,
+        );
         let json = serde_json::to_string(&entry).unwrap();
         let loaded: CacheEntry = serde_json::from_str(&json).unwrap();
 
