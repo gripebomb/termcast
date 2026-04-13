@@ -11,7 +11,7 @@ Build a weather CLI tool for terminal enthusiasts where **aesthetic quality is t
 - No API key required — works on first run with zero config
 - Location auto-detected via IP geolocation
 - `--location` flag overrides detected location
-- Temperature unit auto-detected (°C / °F)
+- Temperature unit auto-detected from locale (US → °F, all others → °C)
 - Error output is styled to match aesthetic
 - Binary runs on macOS and Linux
 
@@ -161,6 +161,6 @@ See [docs/SPEC-ambient.md](docs/SPEC-ambient.md) for the full ambient mode speci
 - ~~Output method~~ — stdout + ANSI (resolved)
 - ~~Location flag~~ — include `--location` / `-l` (resolved)
 - ~~Error styling~~ — colorized (resolved)
-- ~~Temperature units~~ — auto-detect from locale (resolved)
+- ~~Temperature units~~ — locale detection implemented: US → °F, others → °C (resolved)
 - ~~Rust edition~~ — 2021 (resolved)
 - ~~Ambient mode~~ — implemented (see docs/SPEC-ambient.md)

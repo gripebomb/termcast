@@ -61,10 +61,10 @@ pub struct DailyWeather {
 /// Display-ready weather data for rendering.
 #[derive(Debug, Clone)]
 pub struct WeatherDisplay {
-    /// Current temperature in Celsius.
+    /// Current temperature.
     pub temperature: f64,
 
-    /// Feels-like temperature in Celsius.
+    /// Feels-like temperature.
     pub apparent_temperature: f64,
 
     /// Maximum temperature for today.
@@ -78,11 +78,14 @@ pub struct WeatherDisplay {
 
     /// Location name.
     pub location: String,
+
+    /// Whether to display temperatures in Fahrenheit.
+    pub use_fahrenheit: bool,
 }
 
 impl WeatherDisplay {
     /// Creates a new WeatherDisplay from API response and location name.
-    pub fn from_response(response: &WeatherResponse, location: &str) -> Self {
+    pub fn from_response(response: &WeatherResponse, location: &str, use_fahrenheit: bool) -> Self {
         let temp_max = response
             .daily
             .as_ref()
@@ -104,6 +107,7 @@ impl WeatherDisplay {
             temp_min,
             weather_code: response.current_weather.weather_code,
             location: location.to_string(),
+            use_fahrenheit,
         }
     }
 }
@@ -199,7 +203,7 @@ mod tests {
             }
         }"#;
         let response: WeatherResponse = serde_json::from_str(json).unwrap();
-        let display = WeatherDisplay::from_response(&response, "Oslo");
+        let display = WeatherDisplay::from_response(&response, "Oslo", false);
         assert_eq!(display.temperature, 14.0);
         assert_eq!(display.apparent_temperature, 11.0);
         assert_eq!(display.temp_max, 17.0);

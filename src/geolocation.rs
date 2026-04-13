@@ -22,6 +22,10 @@ pub struct GeoResponse {
     /// Country name.
     #[serde(rename = "country_name", default)]
     pub country: String,
+
+    /// ISO 3166-1 alpha-2 country code (e.g., "US", "GB", "NO").
+    #[serde(rename = "country_code", default)]
+    pub country_code: String,
 }
 
 impl GeoResponse {
@@ -58,6 +62,7 @@ mod tests {
             longitude: -74.0060,
             city: "New York".to_string(),
             country: "United States".to_string(),
+            country_code: "US".to_string(),
         };
         assert_eq!(response.location_name(), "New York, United States");
     }
@@ -69,6 +74,7 @@ mod tests {
             longitude: 0.0,
             city: "Unknown".to_string(),
             country: "".to_string(),
+            country_code: "".to_string(),
         };
         assert_eq!(response.location_name(), "Unknown");
     }

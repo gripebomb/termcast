@@ -74,9 +74,12 @@ async fn fetch_and_display_weather(
     location: Option<&str>,
 ) -> Result<(termcast::weather::WeatherDisplay, f64, f64), AppError> {
     // Get location (either from CLI or auto-detect)
-    let (latitude, longitude, location_name) = if let Some(loc) = location {
+    let (latitude, longitude, location_name, use_fahrenheit) = if let Some(loc) = location {
         // Geocode the provided location
-        client.geocode_location(loc).await?
+        let (lat, lon, name) = client.geocode_location(loc).await?;
+        // Determine unit from IP geolocation, not the searched location
+        let (_, _, _, ip_use_fahrenheit) = client.get_location().await?;
+        (lat, lon, name, ip_use_fahrenheit)
     } else {
         // Auto-detect via IP
         client.get_location().await?
@@ -84,7 +87,7 @@ async fn fetch_and_display_weather(
 
     // Get weather data
     let weather_data = client
-        .get_weather(latitude, longitude, &location_name)
+        .get_weather(latitude, longitude, &location_name, use_fahrenheit)
         .await?;
 
     // Get weather description
@@ -110,6 +113,7 @@ fn write_weather_cache(
         weather_data.location.clone(),
         latitude,
         longitude,
+        weather_data.use_fahrenheit,
     );
 
     cache::write_cache(cache_path, &entry)
@@ -129,36 +133,41 @@ async fn run_ambient_mode(
         // Check if cache is fresh
         if cache::is_cache_fresh(&entry, ttl_secs) {
             // Cache is fresh - output immediately
-            output_ambient_weather(entry.weather_code, entry.temperature);
+            output_ambient_weather(entry.weather_code, entry.temperature, entry.use_fahrenheit);
             return Ok(());
         }
     }
 
     // Cache missing or stale - fetch fresh data
-    let (latitude, longitude, location_name) = if let Some(loc) = location {
-        client.geocode_location(loc).await?
+    let (latitude, longitude, location_name, use_fahrenheit) = if let Some(loc) = location {
+        // Geocode the provided location
+        let (lat, lon, name) = client.geocode_location(loc).await?;
+        // Determine unit from IP geolocation
+        let (_, _, _, ip_use_fahrenheit) = client.get_location().await?;
+        (lat, lon, name, ip_use_fahrenheit)
     } else {
         client.get_location().await?
     };
 
     let weather_data = client
-        .get_weather(latitude, longitude, &location_name)
+        .get_weather(latitude, longitude, &location_name, use_fahrenheit)
         .await?;
 
     // Write to cache
     write_weather_cache(cache_path, &weather_data, latitude, longitude)?;
 
     // Output ambient format
-    output_ambient_weather(weather_data.weather_code, weather_data.temperature);
+    output_ambient_weather(weather_data.weather_code, weather_data.temperature, weather_data.use_fahrenheit);
 
     Ok(())
 }
 
-/// Outputs compact weather in format "☀️ 14°" for shell prompts.
-fn output_ambient_weather(weather_code: u32, temperature: f64) {
+/// Outputs compact weather in format "☀️ 14°F" for shell prompts.
+fn output_ambient_weather(weather_code: u32, temperature: f64, use_fahrenheit: bool) {
     let icon = weather::weather_icon(weather_code);
     let temp = temperature as i32;
-    println!("{} {}°", icon, temp);
+    let unit = if use_fahrenheit { "°F" } else { "°C" };
+    println!("{} {}{}", icon, temp, unit);
 }
 
 /// Outputs shell integration snippets.

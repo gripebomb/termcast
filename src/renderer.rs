@@ -13,20 +13,22 @@ use std::io::{self, Write};
 ///
 /// Output format (80-column centered):
 /// ```text
-///      * 14C Oslo
-///    Feels 11C
-///    High 17C . Low 8C
+///      * 14°C Oslo
+///    Feels 11°
+///    High 17° . Low 8°
 ///    Clear until evening
 /// ```
 pub fn render_weather(weather: &WeatherDisplay, description: &str) -> io::Result<()> {
     let mut stdout = io::stdout();
     let terminal_width: usize = 80;
 
+    let unit = if weather.use_fahrenheit { "°F" } else { "°C" };
+
     // Calculate padding for centering
     let icon = crate::weather::weather_icon(weather.weather_code);
     let main_line = format!(
-        "{} {}°C {}",
-        icon, weather.temperature as i32, weather.location
+        "{} {}{} {}",
+        icon, weather.temperature as i32, unit, weather.location
     );
     let padding = (terminal_width.saturating_sub(main_line.len())) / 2;
     let main_indent = " ".repeat(padding);
@@ -37,7 +39,7 @@ pub fn render_weather(weather: &WeatherDisplay, description: &str) -> io::Result
     stdout.queue(Print("\r\n"))?;
 
     // Line 2: Feels like (dim)
-    let feels_line = format!("  Feels {}°", weather.apparent_temperature as i32);
+    let feels_line = format!("  Feels {}{}", weather.apparent_temperature as i32, unit);
     let feels_padding = (terminal_width.saturating_sub(feels_line.len())) / 2;
     stdout.queue(SetForegroundColor(Color::DarkGrey))?;
     stdout.queue(Print(format!(
@@ -49,19 +51,19 @@ pub fn render_weather(weather: &WeatherDisplay, description: &str) -> io::Result
 
     // Line 3: High/Low (cyan for high, magenta for low)
     let high_low_line = format!(
-        "High {}° · Low {}°",
-        weather.temp_max as i32, weather.temp_min as i32
+        "High {}{} · Low {}{}",
+        weather.temp_max as i32, unit, weather.temp_min as i32, unit
     );
     let hl_padding = (terminal_width.saturating_sub(high_low_line.len())) / 2;
 
     stdout.queue(SetForegroundColor(Color::Cyan))?;
     stdout.queue(Print(format!("{}{}", " ".repeat(hl_padding), "High ")))?;
-    stdout.queue(Print(format!("{}°", weather.temp_max as i32)))?;
+    stdout.queue(Print(format!("{}{}", weather.temp_max as i32, unit)))?;
     stdout.queue(SetForegroundColor(Color::White))?;
     stdout.queue(Print(" · "))?;
     stdout.queue(SetForegroundColor(Color::Magenta))?;
     stdout.queue(Print("Low "))?;
-    stdout.queue(Print(format!("{}°", weather.temp_min as i32)))?;
+    stdout.queue(Print(format!("{}{}", weather.temp_min as i32, unit)))?;
     stdout.queue(Print("\r\n"))?;
 
     // Line 4: Condition description (normal)
@@ -102,6 +104,7 @@ mod tests {
             temp_min: 8.0,
             weather_code: 0,
             location: "Oslo".to_string(),
+            use_fahrenheit: false,
         };
         // Verify basic data structure works
         assert_eq!(weather.temperature, 14.0);
@@ -116,6 +119,7 @@ mod tests {
             temp_min: 8.0,
             weather_code: 0,
             location: "Test City".to_string(),
+            use_fahrenheit: false,
         };
 
         // Just verify it doesn't panic and writes to stdout

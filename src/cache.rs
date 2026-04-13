@@ -13,7 +13,7 @@ use crate::errors::AppError;
 pub struct CacheEntry {
     /// Unix timestamp when this entry was created.
     pub timestamp: i64,
-    /// Current temperature in Celsius.
+    /// Current temperature in the user's preferred unit.
     pub temperature: f64,
     /// WMO weather code.
     pub weather_code: u32,
@@ -23,6 +23,8 @@ pub struct CacheEntry {
     pub latitude: f64,
     /// Longitude coordinate.
     pub longitude: f64,
+    /// Whether the cached temperature is in Fahrenheit.
+    pub use_fahrenheit: bool,
 }
 
 impl CacheEntry {
@@ -33,6 +35,7 @@ impl CacheEntry {
         location: String,
         latitude: f64,
         longitude: f64,
+        use_fahrenheit: bool,
     ) -> Self {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -46,6 +49,7 @@ impl CacheEntry {
             location,
             latitude,
             longitude,
+            use_fahrenheit,
         }
     }
 }
@@ -143,7 +147,7 @@ mod tests {
             .unwrap()
             .as_secs() as i64;
 
-        let entry = CacheEntry::new(14.0, 0, "Oslo".to_string(), 59.91, 10.75);
+        let entry = CacheEntry::new(14.0, 0, "Oslo".to_string(), 59.91, 10.75, false);
 
         let after = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -184,7 +188,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let path = temp_dir.path().join("current");
 
-        let entry = CacheEntry::new(14.0, 0, "Oslo".to_string(), 59.91, 10.75);
+        let entry = CacheEntry::new(14.0, 0, "Oslo".to_string(), 59.91, 10.75, false);
         write_cache(&path, &entry).unwrap();
 
         let result = read_cache(&path);
@@ -200,7 +204,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let path = temp_dir.path().join("subdir").join("current");
 
-        let entry = CacheEntry::new(20.0, 1, "Berlin".to_string(), 52.52, 13.40);
+        let entry = CacheEntry::new(20.0, 1, "Berlin".to_string(), 52.52, 13.40, false);
         let result = write_cache(&path, &entry);
 
         assert!(result.is_ok());
@@ -209,7 +213,7 @@ mod tests {
 
     #[test]
     fn test_is_cache_fresh_within_ttl() {
-        let entry = CacheEntry::new(14.0, 0, "Oslo".to_string(), 59.91, 10.75);
+        let entry = CacheEntry::new(14.0, 0, "Oslo".to_string(), 59.91, 10.75, false);
 
         // Entry is fresh within 15 minutes (900 seconds)
         assert!(is_cache_fresh(&entry, 900));
@@ -220,7 +224,7 @@ mod tests {
     #[test]
     fn test_is_cache_fresh_outside_ttl() {
         // Create an entry with an old timestamp manually
-        let mut entry = CacheEntry::new(14.0, 0, "Oslo".to_string(), 59.91, 10.75);
+        let mut entry = CacheEntry::new(14.0, 0, "Oslo".to_string(), 59.91, 10.75, false);
         entry.timestamp -= 3600; // 1 hour ago
 
         // Entry is stale beyond 15 minutes
@@ -231,7 +235,7 @@ mod tests {
 
     #[test]
     fn test_roundtrip_serialization() {
-        let entry = CacheEntry::new(14.5, 3, "San Francisco, CA".to_string(), 37.77, -122.41);
+        let entry = CacheEntry::new(14.5, 3, "San Francisco, CA".to_string(), 37.77, -122.41, false);
         let json = serde_json::to_string(&entry).unwrap();
         let loaded: CacheEntry = serde_json::from_str(&json).unwrap();
 
