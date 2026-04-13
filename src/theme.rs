@@ -219,7 +219,7 @@ fn rgb_to_ansi256(color: Color) -> Color {
         return Color::AnsiValue(231);
     }
     if r == g && g == b {
-        return Color::AnsiValue(232 + ((r - 8) as u16 * 24 / 247) as u8);
+        return Color::AnsiValue(232 + ((r - 8) as u16 * 24 / 230) as u8);
     }
 
     // Map to 6x6x6 color cube (16-231)
@@ -247,35 +247,48 @@ fn normalize_name(name: &str) -> String {
 /// - Case-insensitive matching
 /// - Underscores and hyphens treated equivalently
 /// - Unknown names return default colors
-pub fn resolve_theme(name: &str) -> ThemeColors {
+pub fn resolve_theme(name: &str) -> &'static ThemeColors {
     let normalized = normalize_name(name);
 
     for theme in builtin_themes() {
         if normalize_name(theme.name) == normalized {
-            return ThemeColors {
-                text: theme.colors.text,
-                dimmed: theme.colors.dimmed,
-                temp_high: theme.colors.temp_high,
-                temp_low: theme.colors.temp_low,
-                precip_high: theme.colors.precip_high,
-                precip_medium: theme.colors.precip_medium,
-            };
+            return &theme.colors;
         }
         for alias in theme.aliases {
             if normalize_name(alias) == normalized {
-                return ThemeColors {
-                    text: theme.colors.text,
-                    dimmed: theme.colors.dimmed,
-                    temp_high: theme.colors.temp_high,
-                    temp_low: theme.colors.temp_low,
-                    precip_high: theme.colors.precip_high,
-                    precip_medium: theme.colors.precip_medium,
-                };
+                return &theme.colors;
             }
         }
     }
 
-    default_colors()
+    static DEFAULTS: ThemeColors = ThemeColors {
+        text: Color::Rgb { r: 255, g: 255, b: 255 },
+        dimmed: Color::Rgb { r: 169, g: 169, b: 169 },
+        temp_high: Color::Rgb { r: 0, g: 255, b: 255 },
+        temp_low: Color::Rgb { r: 255, g: 0, b: 255 },
+        precip_high: Color::Rgb { r: 255, g: 0, b: 0 },
+        precip_medium: Color::Rgb { r: 255, g: 255, b: 0 },
+    };
+    &DEFAULTS
+}
+
+/// Resolves a theme name, returning `Some(&ThemeColors)` if found
+/// or `None` if the name doesn't match any built-in theme.
+pub fn resolve_theme_checked(name: &str) -> Option<&'static ThemeColors> {
+    let normalized = normalize_name(name);
+
+    for theme in builtin_themes() {
+        if normalize_name(theme.name) == normalized {
+            return Some(&theme.colors);
+        }
+        for alias in theme.aliases {
+            if normalize_name(alias) == normalized {
+                return Some(&theme.colors);
+            }
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]

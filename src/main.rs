@@ -112,14 +112,10 @@ async fn run() -> Result<(), AppError> {
 
     // Handle --preview-theme
     if let Some(ref name) = args.preview_theme {
-        let themes = theme::builtin_themes();
-        let normalized = name.to_lowercase().replace('_', "-");
-        let found = themes.iter().find(|t| {
-            t.name == normalized || t.aliases.contains(&normalized.as_str())
-        });
-        return match found {
-            Some(t) => {
-                renderer::render_preview_theme(t.name, &t.colors)
+        return match theme::resolve_theme_checked(name) {
+            Some(colors) => {
+                let adapted = adapt_colors_for_terminal(colors);
+                renderer::render_preview_theme(name, &adapted)
                     .map_err(|e| AppError::invalid_arg(format!("Render error: {}", e)))
             }
             None => Err(AppError::invalid_arg(format!(
@@ -194,27 +190,40 @@ async fn run() -> Result<(), AppError> {
     Ok(())
 }
 
-/// Resolves theme colors from config theme name.
+/// Resolves theme colors from config theme name, adapted for the terminal.
 /// Prints a warning to stderr for unknown theme names and falls back to defaults.
+/// Caches the COLORTERM check so it's evaluated once.
 fn resolve_theme_colors(theme_name: &str) -> termcast::theme::ThemeColors {
-    if theme_name.is_empty() {
-        return theme::default_colors();
-    }
-    // Check if the name resolves to a known theme
-    let themes = theme::builtin_themes();
-    let normalized = theme_name.to_lowercase().replace('_', "-");
-    for t in themes {
-        if t.name == normalized
-            || t.aliases.contains(&normalized.as_str())
-        {
-            return theme::resolve_theme(theme_name);
+    let colors = match theme::resolve_theme_checked(theme_name) {
+        Some(c) => c,
+        None => {
+            if !theme_name.is_empty() {
+                eprintln!(
+                    "termcast: warning: unknown theme '{}'. Use --list-themes to see available themes.",
+                    theme_name
+                );
+            }
+            theme::resolve_theme("default")
         }
+    };
+    adapt_colors_for_terminal(colors)
+}
+
+/// Adapts theme colors for the terminal: falls back to ANSI 256
+/// when COLORTERM indicates no true-color support.
+fn adapt_colors_for_terminal(colors: &termcast::theme::ThemeColors) -> termcast::theme::ThemeColors {
+    if theme::supports_truecolor() {
+        termcast::theme::ThemeColors {
+            text: colors.text,
+            dimmed: colors.dimmed,
+            temp_high: colors.temp_high,
+            temp_low: colors.temp_low,
+            precip_high: colors.precip_high,
+            precip_medium: colors.precip_medium,
+        }
+    } else {
+        colors.to_ansi256()
     }
-    eprintln!(
-        "termcast: warning: unknown theme '{}'. Use --list-themes to see available themes.",
-        theme_name
-    );
-    theme::default_colors()
 }
 
 /// Resolves the location query string from CLI args and config.
