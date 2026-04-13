@@ -56,6 +56,10 @@ struct Args {
     #[arg(long)]
     preview_theme: Option<String>,
 
+    /// Suppress NWS severe weather alert display.
+    #[arg(long)]
+    no_alerts: bool,
+
     /// Subcommand (forecast, completions).
     #[command(subcommand)]
     command: Option<Command>,
@@ -174,15 +178,21 @@ async fn run() -> Result<(), AppError> {
             location_query.as_deref(),
             cache_ttl,
             config_use_fahrenheit,
+            args.no_alerts,
         )
         .await;
     }
 
     // Regular mode: fetch weather, display, and cache
     let colors = resolve_theme_colors(&cfg.defaults.theme);
-    let (weather_data, latitude, longitude) =
-        fetch_and_display_weather(&client, location_query.as_deref(), config_use_fahrenheit, &colors)
-            .await?;
+    let (weather_data, latitude, longitude) = fetch_and_display_weather(
+        &client,
+        location_query.as_deref(),
+        config_use_fahrenheit,
+        &colors,
+        args.no_alerts,
+    )
+    .await?;
 
     // Write to cache
     write_weather_cache(&cache_path, &weather_data, latitude, longitude)?;
@@ -312,12 +322,13 @@ async fn fetch_and_display_weather(
     location: Option<&str>,
     config_use_fahrenheit: Option<bool>,
     colors: &termcast::theme::ThemeColors,
+    no_alerts: bool,
 ) -> Result<(termcast::weather::WeatherDisplay, f64, f64), AppError> {
     let cfg = config::load_config(None);
     let (latitude, longitude, location_name, use_fahrenheit) =
         resolve_full_location(client, location, &cfg, config_use_fahrenheit).await?;
 
-    // Get weather data
+    // Fetch weather and alerts concurrently
     let weather_data = client
         .get_weather(latitude, longitude, &location_name, use_fahrenheit)
         .await?;
@@ -329,7 +340,23 @@ async fn fetch_and_display_weather(
     renderer::render_weather(&weather_data, description, colors)
         .map_err(|e| AppError::invalid_arg(format!("Render error: {}", e)))?;
 
+    // Fetch and display alerts (non-blocking, errors suppressed)
+    if !no_alerts {
+        if let Some(alert) = fetch_alerts(client, latitude, longitude).await {
+            renderer::render_alert_line(&alert)
+                .map_err(|e| AppError::invalid_arg(format!("Render error: {}", e)))?;
+        }
+    }
+
     Ok((weather_data, latitude, longitude))
+}
+
+/// Fetches alerts and returns the most severe one, or None on any error.
+async fn fetch_alerts(client: &Client, lat: f64, lon: f64) -> Option<termcast::alerts::Alert> {
+    match client.get_alerts(lat, lon).await {
+        Ok(alerts) => alerts.into_iter().next(),
+        Err(_) => None,
+    }
 }
 
 /// Writes weather data to the cache.
@@ -358,6 +385,7 @@ async fn run_ambient_mode(
     location: Option<&str>,
     cache_ttl_minutes: u64,
     config_use_fahrenheit: Option<bool>,
+    no_alerts: bool,
 ) -> Result<(), AppError> {
     let ttl_secs = (cache_ttl_minutes * 60) as i64;
 
@@ -365,8 +393,8 @@ async fn run_ambient_mode(
     if let Ok(Some(entry)) = cache::read_cache(cache_path) {
         // Check if cache is fresh
         if cache::is_cache_fresh(&entry, ttl_secs) {
-            // Cache is fresh - output immediately
-            output_ambient_weather(entry.weather_code, entry.temperature, entry.use_fahrenheit);
+            // Cache is fresh - output immediately (skip alerts when using cache)
+            output_ambient_weather(entry.weather_code, entry.temperature, entry.use_fahrenheit, None);
             return Ok(());
         }
     }
@@ -376,29 +404,49 @@ async fn run_ambient_mode(
     let (latitude, longitude, location_name, use_fahrenheit) =
         resolve_full_location(client, location, &cfg, config_use_fahrenheit).await?;
 
+    // Fetch weather and alerts concurrently
     let weather_data = client
         .get_weather(latitude, longitude, &location_name, use_fahrenheit)
         .await?;
 
+    // Get most severe alert if not suppressed
+    let alert = if no_alerts {
+        None
+    } else {
+        fetch_alerts(client, latitude, longitude).await
+    };
+
     // Write to cache
     write_weather_cache(cache_path, &weather_data, latitude, longitude)?;
 
-    // Output ambient format
+    // Output ambient format with optional alert indicator
     output_ambient_weather(
         weather_data.weather_code,
         weather_data.temperature,
         weather_data.use_fahrenheit,
+        alert.as_ref(),
     );
 
     Ok(())
 }
 
 /// Outputs compact weather in format "☀️ 14°F" for shell prompts.
-fn output_ambient_weather(weather_code: u32, temperature: f64, use_fahrenheit: bool) {
+/// Appends a warning indicator " ⚠" when an alert is present.
+fn output_ambient_weather(
+    weather_code: u32,
+    temperature: f64,
+    use_fahrenheit: bool,
+    alert: Option<&termcast::alerts::Alert>,
+) {
     let icon = weather::weather_icon(weather_code);
     let temp = temperature as i32;
     let unit = if use_fahrenheit { "°F" } else { "°C" };
-    println!("{} {}{}", icon, temp, unit);
+    let alert_suffix = match alert {
+        Some(a) if a.severity == termcast::alerts::AlertSeverity::Warning => " ⚠",
+        Some(_) => " ⚡",
+        None => "",
+    };
+    println!("{}{} {}{}", icon, temp, unit, alert_suffix);
 }
 
 /// Runs the forecast subcommand: resolve location, fetch forecast, render output.
@@ -768,5 +816,31 @@ longitude = 10.75
         let args = Args::parse_from(["termcast"]);
         assert!(!args.list_themes);
         assert!(args.preview_theme.is_none());
+    }
+
+    #[test]
+    fn test_no_alerts_flag_default() {
+        let args = Args::parse_from(&["termcast"]);
+        assert!(!args.no_alerts);
+    }
+
+    #[test]
+    fn test_no_alerts_flag_set() {
+        let args = Args::parse_from(&["termcast", "--no-alerts"]);
+        assert!(args.no_alerts);
+    }
+
+    #[test]
+    fn test_no_alerts_with_location() {
+        let args = Args::parse_from(&["termcast", "--no-alerts", "-l", "Tulsa, OK"]);
+        assert!(args.no_alerts);
+        assert_eq!(args.location, Some("Tulsa, OK".to_string()));
+    }
+
+    #[test]
+    fn test_no_alerts_with_ambient() {
+        let args = Args::parse_from(&["termcast", "--no-alerts", "--ambient"]);
+        assert!(args.no_alerts);
+        assert!(args.ambient);
     }
 }
