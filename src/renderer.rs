@@ -3,13 +3,30 @@
 //! Uses crossterm for cross-platform terminal styling and ANSI output.
 
 use crate::forecast::ForecastDisplay;
-use crate::theme::ThemeColors;
+use crate::theme::{self, ThemeColors};
 use crate::weather::WeatherDisplay;
 use crossterm::{
     style::{Attribute, Color, Print, SetAttribute, SetForegroundColor},
     QueueableCommand,
 };
 use std::io::{self, Write};
+
+/// Returns colors adapted for the terminal: falls back to ANSI 256
+/// when true-color is not supported.
+fn adapt_colors(colors: &ThemeColors) -> ThemeColors {
+    if theme::supports_truecolor() {
+        ThemeColors {
+            text: colors.text,
+            dimmed: colors.dimmed,
+            temp_high: colors.temp_high,
+            temp_low: colors.temp_low,
+            precip_high: colors.precip_high,
+            precip_medium: colors.precip_medium,
+        }
+    } else {
+        colors.to_ansi256()
+    }
+}
 
 /// Renders weather data to the terminal with styled output.
 ///
@@ -25,6 +42,7 @@ pub fn render_weather(
     description: &str,
     colors: &ThemeColors,
 ) -> io::Result<()> {
+    let colors = adapt_colors(colors);
     let mut stdout = io::stdout();
     let terminal_width: usize = 80;
 
@@ -106,6 +124,7 @@ pub fn render_error(message: &str) -> io::Result<()> {
 ///   Tue   🌤 15°/7°    ☂ 10%
 /// ```
 pub fn render_forecast(display: &ForecastDisplay, colors: &ThemeColors) -> io::Result<()> {
+    let colors = adapt_colors(colors);
     let mut stdout = io::stdout();
     let terminal_width: usize = 80;
 
@@ -194,6 +213,7 @@ pub fn render_forecast_hourly(
     display: &ForecastDisplay,
     colors: &ThemeColors,
 ) -> io::Result<()> {
+    let colors = adapt_colors(colors);
     let mut stdout = io::stdout();
     let terminal_width: usize = 80;
 
@@ -256,6 +276,7 @@ pub fn render_forecast_hourly(
 
 /// Renders a static demo weather display using the given theme's colors.
 pub fn render_preview_theme(name: &str, colors: &ThemeColors) -> io::Result<()> {
+    let colors = adapt_colors(colors);
     let mut stdout = io::stdout();
 
     // Weather demo
