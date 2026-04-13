@@ -3,6 +3,7 @@
 //! Uses crossterm for cross-platform terminal styling and ANSI output.
 
 use crate::forecast::ForecastDisplay;
+use crate::theme::ThemeColors;
 use crate::weather::WeatherDisplay;
 use crossterm::{
     style::{Attribute, Color, Print, SetAttribute, SetForegroundColor},
@@ -19,7 +20,11 @@ use std::io::{self, Write};
 ///    High 17° . Low 8°
 ///    Clear until evening
 /// ```
-pub fn render_weather(weather: &WeatherDisplay, description: &str) -> io::Result<()> {
+pub fn render_weather(
+    weather: &WeatherDisplay,
+    description: &str,
+    colors: &ThemeColors,
+) -> io::Result<()> {
     let mut stdout = io::stdout();
     let terminal_width: usize = 80;
 
@@ -34,15 +39,15 @@ pub fn render_weather(weather: &WeatherDisplay, description: &str) -> io::Result
     let padding = (terminal_width.saturating_sub(main_line.len())) / 2;
     let main_indent = " ".repeat(padding);
 
-    // Line 1: Icon, temperature, location (bold white)
-    stdout.queue(SetForegroundColor(Color::White))?;
+    // Line 1: Icon, temperature, location
+    stdout.queue(SetForegroundColor(colors.text))?;
     stdout.queue(Print(format!("{}{}", main_indent, main_line)))?;
     stdout.queue(Print("\r\n"))?;
 
-    // Line 2: Feels like (dim)
+    // Line 2: Feels like (dimmed)
     let feels_line = format!("  Feels {}{}", weather.apparent_temperature as i32, unit);
     let feels_padding = (terminal_width.saturating_sub(feels_line.len())) / 2;
-    stdout.queue(SetForegroundColor(Color::DarkGrey))?;
+    stdout.queue(SetForegroundColor(colors.dimmed))?;
     stdout.queue(Print(format!(
         "{}{}",
         " ".repeat(feels_padding),
@@ -50,26 +55,26 @@ pub fn render_weather(weather: &WeatherDisplay, description: &str) -> io::Result
     )))?;
     stdout.queue(Print("\r\n"))?;
 
-    // Line 3: High/Low (cyan for high, magenta for low)
+    // Line 3: High/Low
     let high_low_line = format!(
         "High {}{} · Low {}{}",
         weather.temp_max as i32, unit, weather.temp_min as i32, unit
     );
     let hl_padding = (terminal_width.saturating_sub(high_low_line.len())) / 2;
 
-    stdout.queue(SetForegroundColor(Color::Cyan))?;
+    stdout.queue(SetForegroundColor(colors.temp_high))?;
     stdout.queue(Print(format!("{}{}", " ".repeat(hl_padding), "High ")))?;
     stdout.queue(Print(format!("{}{}", weather.temp_max as i32, unit)))?;
-    stdout.queue(SetForegroundColor(Color::White))?;
+    stdout.queue(SetForegroundColor(colors.text))?;
     stdout.queue(Print(" · "))?;
-    stdout.queue(SetForegroundColor(Color::Magenta))?;
+    stdout.queue(SetForegroundColor(colors.temp_low))?;
     stdout.queue(Print("Low "))?;
     stdout.queue(Print(format!("{}{}", weather.temp_min as i32, unit)))?;
     stdout.queue(Print("\r\n"))?;
 
-    // Line 4: Condition description (normal)
+    // Line 4: Condition description
     let desc_padding = (terminal_width.saturating_sub(description.len())) / 2;
-    stdout.queue(SetForegroundColor(Color::White))?;
+    stdout.queue(SetForegroundColor(colors.text))?;
     stdout.queue(Print(format!(
         "{}{}",
         " ".repeat(desc_padding),
@@ -100,7 +105,7 @@ pub fn render_error(message: &str) -> io::Result<()> {
 ///   Mon   ☀️  17°/8°    ☂ 5%
 ///   Tue   🌤 15°/7°    ☂ 10%
 /// ```
-pub fn render_forecast(display: &ForecastDisplay) -> io::Result<()> {
+pub fn render_forecast(display: &ForecastDisplay, colors: &ThemeColors) -> io::Result<()> {
     let mut stdout = io::stdout();
     let terminal_width: usize = 80;
 
@@ -108,7 +113,7 @@ pub fn render_forecast(display: &ForecastDisplay) -> io::Result<()> {
     let title_padding = (terminal_width.saturating_sub(title.len())) / 2;
 
     // Title line
-    stdout.queue(SetForegroundColor(Color::White))?;
+    stdout.queue(SetForegroundColor(colors.text))?;
     stdout.queue(SetAttribute(Attribute::Bold))?;
     stdout.queue(Print(format!(
         "{}{}\r\n",
@@ -126,13 +131,13 @@ pub fn render_forecast(display: &ForecastDisplay) -> io::Result<()> {
         // Day name color
         match row.day_name.as_str() {
             "Today" => {
-                stdout.queue(SetForegroundColor(Color::Cyan))?;
+                stdout.queue(SetForegroundColor(colors.temp_high))?;
             }
             "Tomorrow" => {
-                stdout.queue(SetForegroundColor(Color::Magenta))?;
+                stdout.queue(SetForegroundColor(colors.temp_low))?;
             }
             _ => {
-                stdout.queue(SetForegroundColor(Color::White))?;
+                stdout.queue(SetForegroundColor(colors.text))?;
                 stdout.queue(SetAttribute(Attribute::Bold))?;
             }
         }
@@ -142,26 +147,26 @@ pub fn render_forecast(display: &ForecastDisplay) -> io::Result<()> {
         // Icon
         stdout.queue(Print(format!("{} ", icon)))?;
 
-        // High temp (cyan)
-        stdout.queue(SetForegroundColor(Color::Cyan))?;
+        // High temp
+        stdout.queue(SetForegroundColor(colors.temp_high))?;
         stdout.queue(Print(format!("{}{}", row.temp_high as i32, unit)))?;
 
         // Separator
-        stdout.queue(SetForegroundColor(Color::White))?;
+        stdout.queue(SetForegroundColor(colors.text))?;
         stdout.queue(Print("/"))?;
 
-        // Low temp (magenta)
-        stdout.queue(SetForegroundColor(Color::Magenta))?;
+        // Low temp
+        stdout.queue(SetForegroundColor(colors.temp_low))?;
         stdout.queue(Print(format!("{}{}", row.temp_low as i32, unit)))?;
 
         // Precip chance
         let precip_padding = 4; // align precip column
         if row.precip_chance >= 80 {
-            stdout.queue(SetForegroundColor(Color::Red))?;
+            stdout.queue(SetForegroundColor(colors.precip_high))?;
         } else if row.precip_chance >= 50 {
-            stdout.queue(SetForegroundColor(Color::Yellow))?;
+            stdout.queue(SetForegroundColor(colors.precip_medium))?;
         } else {
-            stdout.queue(SetForegroundColor(Color::DarkGrey))?;
+            stdout.queue(SetForegroundColor(colors.dimmed))?;
         }
         stdout.queue(Print(format!(
             "{:>precip_padding$}☂ {}%\r\n",
@@ -185,7 +190,10 @@ pub fn render_forecast(display: &ForecastDisplay) -> io::Result<()> {
 ///   12pm  🌤 14°    ☂ 10%
 ///   3pm   🌧 13°    ☂ 70%    Rain starting
 /// ```
-pub fn render_forecast_hourly(display: &ForecastDisplay) -> io::Result<()> {
+pub fn render_forecast_hourly(
+    display: &ForecastDisplay,
+    colors: &ThemeColors,
+) -> io::Result<()> {
     let mut stdout = io::stdout();
     let terminal_width: usize = 80;
 
@@ -197,7 +205,7 @@ pub fn render_forecast_hourly(display: &ForecastDisplay) -> io::Result<()> {
     let title_padding = (terminal_width.saturating_sub(title.len())) / 2;
 
     // Title
-    stdout.queue(SetForegroundColor(Color::White))?;
+    stdout.queue(SetForegroundColor(colors.text))?;
     stdout.queue(SetAttribute(Attribute::Bold))?;
     stdout.queue(Print(format!(
         "{}{}\r\n",
@@ -212,30 +220,30 @@ pub fn render_forecast_hourly(display: &ForecastDisplay) -> io::Result<()> {
     for entry in &display.hourly {
         let icon = crate::weather::weather_icon(entry.weather_code);
 
-        // Time (white)
-        stdout.queue(SetForegroundColor(Color::White))?;
+        // Time
+        stdout.queue(SetForegroundColor(colors.text))?;
         stdout.queue(Print(format!("  {:<6}", entry.time)))?;
 
         // Icon
         stdout.queue(Print(format!("{} ", icon)))?;
 
         // Temperature
-        stdout.queue(SetForegroundColor(Color::Cyan))?;
+        stdout.queue(SetForegroundColor(colors.temp_high))?;
         stdout.queue(Print(format!("{}{}", entry.temperature as i32, unit)))?;
 
         // Precip chance
         if entry.precip_chance >= 80 {
-            stdout.queue(SetForegroundColor(Color::Red))?;
+            stdout.queue(SetForegroundColor(colors.precip_high))?;
         } else if entry.precip_chance >= 50 {
-            stdout.queue(SetForegroundColor(Color::Yellow))?;
+            stdout.queue(SetForegroundColor(colors.precip_medium))?;
         } else {
-            stdout.queue(SetForegroundColor(Color::DarkGrey))?;
+            stdout.queue(SetForegroundColor(colors.dimmed))?;
         }
         stdout.queue(Print(format!("    ☂ {}%", entry.precip_chance)))?;
 
         // Annotation
         if let Some(ref annotation) = entry.annotation {
-            stdout.queue(SetForegroundColor(Color::DarkGrey))?;
+            stdout.queue(SetForegroundColor(colors.dimmed))?;
             stdout.queue(Print(format!("    {}", annotation)))?;
         }
 
@@ -278,6 +286,10 @@ mod tests {
     use crate::forecast::{DailyRow, HourlyEntry};
     use crate::weather::WeatherDisplay;
 
+    fn default_colors() -> ThemeColors {
+        crate::theme::default_colors()
+    }
+
     #[test]
     fn test_weather_display_construction() {
         let weather = WeatherDisplay {
@@ -303,7 +315,7 @@ mod tests {
             location: "Test City".to_string(),
             use_fahrenheit: false,
         };
-        let result = render_weather(&weather, "Clear");
+        let result = render_weather(&weather, "Clear", &default_colors());
         assert!(result.is_ok());
     }
 
@@ -336,7 +348,7 @@ mod tests {
             ],
             hourly: vec![],
         };
-        let result = render_forecast(&display);
+        let result = render_forecast(&display, &default_colors());
         assert!(result.is_ok());
     }
 
@@ -363,7 +375,7 @@ mod tests {
                 },
             ],
         };
-        let result = render_forecast_hourly(&display);
+        let result = render_forecast_hourly(&display, &default_colors());
         assert!(result.is_ok());
     }
 
@@ -375,7 +387,7 @@ mod tests {
             daily: vec![],
             hourly: vec![],
         };
-        let result = render_forecast_hourly(&display);
+        let result = render_forecast_hourly(&display, &default_colors());
         assert!(result.is_ok());
     }
 

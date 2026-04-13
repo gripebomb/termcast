@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use clap::{Parser, Subcommand};
-use termcast::{api::Client, cache, config, errors::AppError, renderer, weather};
+use termcast::{api::Client, cache, config, errors::AppError, renderer, theme, weather};
 
 /// Command-line arguments for TermCast.
 #[derive(Parser, Debug)]
@@ -148,14 +148,38 @@ async fn run() -> Result<(), AppError> {
     }
 
     // Regular mode: fetch weather, display, and cache
+    let colors = resolve_theme_colors(&cfg.defaults.theme);
     let (weather_data, latitude, longitude) =
-        fetch_and_display_weather(&client, location_query.as_deref(), config_use_fahrenheit)
+        fetch_and_display_weather(&client, location_query.as_deref(), config_use_fahrenheit, &colors)
             .await?;
 
     // Write to cache
     write_weather_cache(&cache_path, &weather_data, latitude, longitude)?;
 
     Ok(())
+}
+
+/// Resolves theme colors from config theme name.
+/// Prints a warning to stderr for unknown theme names and falls back to defaults.
+fn resolve_theme_colors(theme_name: &str) -> termcast::theme::ThemeColors {
+    if theme_name.is_empty() {
+        return theme::default_colors();
+    }
+    // Check if the name resolves to a known theme
+    let themes = theme::builtin_themes();
+    let normalized = theme_name.to_lowercase().replace('_', "-");
+    for t in themes {
+        if t.name == normalized
+            || t.aliases.contains(&normalized.as_str())
+        {
+            return theme::resolve_theme(theme_name);
+        }
+    }
+    eprintln!(
+        "termcast: warning: unknown theme '{}'. Use --list-themes to see available themes.",
+        theme_name
+    );
+    theme::default_colors()
 }
 
 /// Resolves the location query string from CLI args and config.
@@ -243,6 +267,7 @@ async fn fetch_and_display_weather(
     client: &Client,
     location: Option<&str>,
     config_use_fahrenheit: Option<bool>,
+    colors: &termcast::theme::ThemeColors,
 ) -> Result<(termcast::weather::WeatherDisplay, f64, f64), AppError> {
     let cfg = config::load_config(None);
     let (latitude, longitude, location_name, use_fahrenheit) =
@@ -257,7 +282,7 @@ async fn fetch_and_display_weather(
     let description = weather::weather_description(weather_data.weather_code);
 
     // Render to terminal
-    renderer::render_weather(&weather_data, description)
+    renderer::render_weather(&weather_data, description, colors)
         .map_err(|e| AppError::invalid_arg(format!("Render error: {}", e)))?;
 
     Ok((weather_data, latitude, longitude))
@@ -365,10 +390,11 @@ async fn run_forecast(
         renderer::output_ambient_forecast(&display)
             .map_err(|e| AppError::invalid_arg(format!("Render error: {}", e)))?;
     } else {
-        renderer::render_forecast(&display)
+        let colors = resolve_theme_colors(&cfg.defaults.theme);
+        renderer::render_forecast(&display, &colors)
             .map_err(|e| AppError::invalid_arg(format!("Render error: {}", e)))?;
         if hourly {
-            renderer::render_forecast_hourly(&display)
+            renderer::render_forecast_hourly(&display, &colors)
                 .map_err(|e| AppError::invalid_arg(format!("Render error: {}", e)))?;
         }
     }
