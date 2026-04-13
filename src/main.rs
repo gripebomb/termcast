@@ -328,10 +328,20 @@ async fn fetch_and_display_weather(
     let (latitude, longitude, location_name, use_fahrenheit) =
         resolve_full_location(client, location, &cfg, config_use_fahrenheit).await?;
 
-    // Fetch weather and alerts concurrently
-    let weather_data = client
-        .get_weather(latitude, longitude, &location_name, use_fahrenheit)
-        .await?;
+    // Fetch weather and alerts concurrently to avoid adding latency
+    let alerts_future = async {
+        if no_alerts {
+            Ok(vec![])
+        } else {
+            client.get_alerts(latitude, longitude).await
+        }
+    };
+    let (weather_result, alerts_result) = tokio::join!(
+        client.get_weather(latitude, longitude, &location_name, use_fahrenheit),
+        alerts_future,
+    );
+
+    let weather_data = weather_result?;
 
     // Get weather description
     let description = weather::weather_description(weather_data.weather_code);
@@ -340,9 +350,9 @@ async fn fetch_and_display_weather(
     renderer::render_weather(&weather_data, description, colors)
         .map_err(|e| AppError::invalid_arg(format!("Render error: {}", e)))?;
 
-    // Fetch and display alerts (non-blocking, errors suppressed)
-    if !no_alerts {
-        if let Some(alert) = fetch_alerts(client, latitude, longitude).await {
+    // Display most severe alert if any
+    if let Ok(alerts) = alerts_result {
+        if let Some(alert) = alerts.into_iter().next() {
             renderer::render_alert_line(&alert)
                 .map_err(|e| AppError::invalid_arg(format!("Render error: {}", e)))?;
         }
