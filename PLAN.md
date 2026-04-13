@@ -2,7 +2,7 @@
 
 ## Overview
 
-Build a weather CLI tool in Rust with beautiful terminal output. The project is greenfield — no source files exist yet. Will implement the core functionality following the dependency graph: errors → data types → API client → CLI → renderer.
+Build a weather CLI tool in Rust with beautiful terminal output. All phases are complete.
 
 ## Architecture Decisions
 
@@ -10,305 +10,172 @@ Build a weather CLI tool in Rust with beautiful terminal output. The project is 
 2. **`thiserror` for errors** — Provides structured error types with `?` operator support
 3. **Crossterm for rendering** — Cross-platform terminal capabilities with ANSI support
 4. **Minimal dependencies** — Only what's specified in SPEC.md to keep binary small
+5. **Semantic color slots** — Theme system uses 6 named color roles, never hardcoded in renderer
+6. **Static built-in themes** — No file I/O for themes, all compiled into the binary
+7. **ANSI 256-color fallback** — Automatic color cube mapping for non-truecolor terminals
 
 ## Task List
 
 ### Phase 1: Project Foundation
 
-- [ ] **Task 1: Initialize Rust project structure**
-  - Create `Cargo.toml` with all dependencies (crossterm, reqwest, serde, serde_json, tokio, thiserror, clap)
+- [x] **Task 1: Initialize Rust project structure**
+  - Created `Cargo.toml` with all dependencies
   - Set Rust edition to 2021
-  - Create `src/` directory structure matching SPEC.md
+  - Created `src/` directory structure
 
-- [ ] **Task 2: Implement error types**
-  - Create `src/errors.rs` with `AppError` enum
-  - Include variants: `NetworkError`, `ParseError`, `GeolocationError`, `WeatherError`
-  - Implement `std::error::Error` and `Display` traits via thiserror
-  - Add context to errors (URL, field names, etc.)
+- [x] **Task 2: Implement error types**
+  - Created `src/errors.rs` with `AppError` enum
+  - Variants: `NetworkError`, `ParseError`, `GeolocationError`, `WeatherError`, `InvalidArg`
+  - Implemented `std::error::Error` and `Display` traits via thiserror
 
-**Acceptance criteria:**
-- [ ] `AppError` variants cover all failure modes from SPEC.md
-- [ ] Errors are descriptive for debugging (include URLs, response fields)
-- [ ] `cargo build` compiles without warnings
-
-**Verification:**
-- [ ] `cargo check` passes
-- [ ] `cargo clippy` shows no warnings
-
-**Dependencies:** None
-
-**Files touched:**
-- `Cargo.toml`
-- `src/errors.rs`
-
-**Estimated scope:** XS
-
----
-
-- [ ] **Task 3: Implement data types for API responses**
-  - Create `src/geolocation.rs` — `GeoResponse` struct for ipapi.co
-    - Fields: `latitude`, `longitude`, `city`, `country`
-  - Create `src/weather.rs` — `WeatherResponse` struct for Open-Meteo
-    - Fields: `temperature_2m`, `apparent_temperature`, `weather_code`
-    - Daily fields: `temperature_2m_max`, `temperature_2m_min`
-    - Daily fields: `weather_code`, `time`
-  - Use `#[serde(rename = "...")]` for camelCase JSON fields
-
-**Acceptance criteria:**
-- [ ] Structs deserialize from actual API response JSON
-- [ ] All required fields present for 4-line output (current temp, feels, high/low, condition)
-- [ ] `#[serde(default)]` on optional fields
-
-**Verification:**
-- [ ] Unit tests parse sample JSON responses
-- [ ] `cargo test` passes on parsing tests
-
-**Dependencies:** Task 2 (errors module)
-
-**Files touched:**
-- `src/geolocation.rs`
-- `src/weather.rs`
-
-**Estimated scope:** S
-
----
+- [x] **Task 3: Implement data types for API responses**
+  - Created `src/geolocation.rs` — `GeoResponse` struct
+  - Created `src/weather.rs` — `WeatherResponse` struct with WMO code mappings
+  - Used `#[serde(rename = "...")]` for camelCase JSON fields
 
 ### Phase 2: API Integration
 
-- [ ] **Task 4: Implement HTTP client for geolocation**
-  - Create `src/api.rs` with geolocation function
+- [x] **Task 4: Implement HTTP client for geolocation**
   - Fetch from `https://ipapi.co/json/`
   - Parse response into `GeoResponse`
-  - Return `Result<(f64, f64, String), AppError>`
-  - Include User-Agent header (required by ipapi.co)
+  - Includes User-Agent header and timeout
 
-**Acceptance criteria:**
-- [ ] Returns (latitude, longitude, city_name) tuple
-- [ ] Handles network failures gracefully
-- [ ] Handles invalid JSON gracefully
-- [ ] Includes timeout (10 seconds)
-
-**Verification:**
-- [ ] Manual test: `curl` the endpoint and verify structure
-- [ ] Unit test with mocked response
-
-**Dependencies:** Task 2, Task 3
-
-**Files touched:**
-- `src/api.rs`
-
-**Estimated scope:** S
-
----
-
-- [ ] **Task 5: Implement HTTP client for weather**
+- [x] **Task 5: Implement HTTP client for weather**
   - Fetch from Open-Meteo API
-  - Parameters: `latitude`, `longitude`, `current_weather=true`, `daily=weather_code,temperature_2m_max,temperature_2m_min`, `timezone=auto`
-  - Parse response into weather data
-  - Return current temp, feels-like, high, low, weather code, daily summary
-
-**Acceptance criteria:**
-- [ ] Returns all data needed for 4-line output
-- [ ] Handles API error responses (non-200)
-- [ ] Handles malformed JSON
-- [ ] Includes timeout
-
-**Verification:**
-- [ ] Unit test with mocked Open-Meteo response
-- [ ] Parse tests for weather codes
-
-**Dependencies:** Task 2, Task 3, Task 4
-
-**Files touched:**
-- `src/api.rs`
-
-**Estimated scope:** S
-
----
+  - Returns current temp, feels-like, high, low, weather code, daily summary
+  - Handles API error responses and malformed JSON
 
 ### Phase 3: CLI and Rendering
 
-- [ ] **Task 6: Implement CLI argument parsing**
-  - Use `clap` with `derive` macro
-  - Arguments: `--location`, `-l` (optional string)
-  - Arguments: `--help`, `--version`
-  - Version from `Cargo.toml`
+- [x] **Task 6: Implement CLI argument parsing**
+  - Used `clap` with `derive` macro
+  - Arguments: `--location`, `-l`, `--help`, `--version`, `--ambient`, `--cache-ttl`, `--install`, `--at`, `--config`, `--list-themes`, `--preview-theme`
+  - Subcommands: `forecast`, `completions`
 
-**Acceptance criteria:**
-- [ ] `--location` accepts city names like "Oslo" or "San Francisco, CA"
-- [ ] `--help` shows usage info
-- [ ] `--version` shows version from Cargo.toml
+- [x] **Task 7: Implement terminal renderer**
+  - Created `src/renderer.rs`
+  - Weather icon mapping based on WMO weather codes
+  - Styled output using crossterm with theme colors
+  - 80-column centered output
 
-**Verification:**
-- [ ] `./target/release/termcast --help` works
-- [ ] `./target/release/termcast --location Oslo` parses correctly
-
-**Dependencies:** Task 2
-
-**Files touched:**
-- `src/main.rs`
-
-**Estimated scope:** XS
-
----
-
-- [ ] **Task 7: Implement terminal renderer**
-  - Create `src/renderer.rs`
-  - Function: `render_weather(weather: WeatherDisplay)`
-  - Weather icon mapping based on WMO weather codes (0, 1-3, 45-48, 51-67, 71-77, 80-82, 95-99)
-  - Unicode symbols: ☀️, 🌤, 🌫, 🌧, ❄, 🌦, ⛈, ☁
-  - Styled output using crossterm:
-    - Location: bold white
-    - Temperature: bright white
-    - Feels: dim
-    - High/Low: cyan/magenta or styled consistently
-    - Condition: normal
-
-**Acceptance criteria:**
-- [ ] Output matches SPEC.md format exactly:
-  ```
-       ☁ 14°C Oslo
-     Feels 11°
-     High 17° · Low 8°
-     Clear until evening
-  ```
-- [ ] ANSI codes present for color
-- [ ] Works in iTerm2 and macOS Terminal
-- [ ] Centered on an 80-column terminal
-
-**Verification:**
-- [ ] Manual test: run and screenshot output
-- [ ] Verify ANSI codes with `cat -v` or `od`
-- [ ] Test with `--location` flag
-
-**Dependencies:** Task 3, Task 5, Task 6
-
-**Files touched:**
-- `src/renderer.rs`
-
-**Estimated scope:** M
-
----
-
-### Phase 4: Integration and Polish
-
-- [ ] **Task 8: Wire up main.rs**
-  - Parse CLI arguments
-  - Get location (from --location or geolocation API)
-  - Fetch weather data
-  - Render output
+- [x] **Task 8: Wire up main.rs**
+  - Parse CLI arguments, get location, fetch weather, render output
   - Handle errors with styled error messages
 
-**Acceptance criteria:**
-- [ ] `./target/release/termcast` works with auto-detected location
-- [ ] `./target/release/termcast --location Oslo` works
-- [ ] Network errors show styled error message
-- [ ] API errors show styled error message
+- [x] **Task 9: Add weather code to text description**
+  - `description()` method mapping WMO codes to readable strings
 
-**Verification:**
-- [ ] Test without internet (should show styled error)
-- [ ] Test with valid --location
-- [ ] Test with invalid location
+### Phase 4: Ambient Mode and Caching
 
-**Dependencies:** Task 4, Task 5, Task 6, Task 7
+- [x] **Task 10: Implement ambient mode**
+  - Compact output format for shell prompts: `☀️ 14°C`
+  - `--ambient` flag with cache-first strategy
+  - `--install` for shell integration snippets (bash, zsh, tmux)
 
-**Files touched:**
-- `src/main.rs`
+- [x] **Task 11: Implement weather caching**
+  - Disk cache at `~/.cache/termcast/current`
+  - Configurable TTL (default 15 minutes)
+  - Regular mode populates cache, ambient mode reads first
 
-**Estimated scope:** S
+### Phase 5: Configuration
 
----
+- [x] **Task 12: Implement TOML config loading**
+  - `src/config.rs` with `Defaults` and `Location` structs
+  - XDG config directory support
+  - Named locations with optional coordinates
+  - Unit preference (auto/celsius/fahrenheit)
+  - `--at` flag for saved location resolution
 
-- [ ] **Task 9: Add weather code to text description**
-  - Add a `description()` method to weather codes
-  - Map codes to readable strings (e.g., "Clear", "Partly Cloudy", "Light Rain")
+- [x] **Task 13: Add shell completions**
+  - `completions` subcommand using `clap_complete`
+  - Supports bash, zsh, fish, elvish, powershell
 
-**Acceptance criteria:**
-- [ ] Daily forecast line shows meaningful text
-- [ ] All WMO codes have reasonable descriptions
+### Phase 6: Forecast
 
-**Verification:**
-- [ ] Output includes descriptive text, not just icon
+- [x] **Task 14: Implement multi-day forecast**
+  - `src/forecast.rs` with daily and hourly data types
+  - `forecast` subcommand with `--days` (1-7) and `--hourly` flags
+  - `--ambient` for compact one-line forecast output
 
-**Dependencies:** Task 7
+### Phase 7: Color Themes
 
-**Files touched:**
-- `src/weather.rs` or `src/renderer.rs`
+- [x] **Task 15: Implement theme engine**
+  - `src/theme.rs` with `ThemeColors` struct (6 semantic slots)
+  - 11 built-in themes: default, catppuccin, catppuccin-latte, dracula, nord, solarized, solarized-light, tokyo-night, tokyo-night-light, gruvbox, gruvbox-light
+  - Case-insensitive name resolution with hyphen/underscore normalization
+  - Theme aliases (e.g., `catppuccin-mocha` → `catppuccin`)
 
-**Estimated scope:** XS
+- [x] **Task 16: Add theme config and CLI flags**
+  - `theme` field in config `[defaults]`
+  - `--list-themes` flag to show available themes
+  - `--preview-theme <name>` to render demo with chosen theme
+  - Warning on unknown theme names
 
----
+- [x] **Task 17: Implement ANSI 256-color fallback**
+  - `rgb_to_ansi256()` function mapping RGB to 6x6x6 color cube
+  - Greyscale ramp handling (232-255)
+  - `supports_truecolor()` detecting `COLORTERM` env var
+  - Automatic color adaptation in `main.rs`
 
-### Phase 5: Testing
+### Phase 8: Testing
 
-- [ ] **Task 10: Write unit tests**
-  - Test JSON parsing in `tests/` directory
-  - Test weather code to icon mapping
-  - Test weather code to description mapping
-  - Mock HTTP responses using `reqwest` mock or similar
+- [x] **Task 18: Write unit tests**
+  - Theme resolution tests (case, aliases, fallbacks)
+  - ANSI 256-color conversion tests
+  - Config parsing tests (TOML, defaults, XDG paths)
+  - CLI argument parsing tests
+  - Renderer output tests
+  - Forecast data construction tests
 
-**Acceptance criteria:**
-- [ ] All parsing tests pass
-- [ ] All mapping tests pass
-- [ ] No live API calls in tests
-
-**Verification:**
-- [ ] `cargo test` passes 100%
-
-**Dependencies:** All previous tasks
-
-**Files touched:**
-- `tests/api_tests.rs`
-- Inline `#[cfg(test)]` modules
-
-**Estimated scope:** M
-
----
-
-- [ ] **Task 11: Code quality checks**
-  - Run `cargo fmt --check`
-  - Run `cargo clippy`
-  - Fix any warnings or style issues
-
-**Acceptance criteria:**
-- [ ] `cargo fmt --check` passes
-- [ ] `cargo clippy` passes with no warnings
-
-**Verification:**
-- [ ] Commands run without errors
-
-**Dependencies:** All implementation tasks
-
-**Estimated scope:** XS
-
----
+- [x] **Task 19: Code quality checks**
+  - `cargo fmt --check` passes
+  - `cargo clippy` passes with no warnings
 
 ## Checkpoints
 
-### Checkpoint: After Tasks 1-3 (Foundation)
-- [ ] Project structure exists
-- [ ] `cargo check` compiles
-- [ ] Error types are defined
-- [ ] Data types parse correctly
+### Checkpoint: Foundation (Phase 1)
+- [x] Project structure exists
+- [x] `cargo check` compiles
+- [x] Error types are defined
+- [x] Data types parse correctly
 
-### Checkpoint: After Tasks 4-5 (API Layer)
-- [ ] Geolocation works (or mocks correctly)
-- [ ] Weather API integration complete
-- [ ] Unit tests for parsing pass
+### Checkpoint: API Layer (Phase 2)
+- [x] Geolocation works
+- [x] Weather API integration complete
+- [x] Unit tests for parsing pass
 
-### Checkpoint: After Tasks 6-9 (Full Integration)
-- [ ] `./target/release/termcast` shows 4-line output
-- [ ] `--location` flag works
-- [ ] `--help` works
-- [ ] Errors are styled
+### Checkpoint: Full Integration (Phase 3)
+- [x] `./target/release/termcast` shows 4-line output
+- [x] `--location` flag works
+- [x] `--help` works
+- [x] Errors are styled
 
-### Checkpoint: Final (Tasks 10-11)
-- [ ] `cargo test` passes 100%
-- [ ] `cargo fmt --check` passes
-- [ ] `cargo clippy` passes
-- [ ] All acceptance criteria from SPEC.md met
+### Checkpoint: Ambient Mode (Phase 4)
+- [x] `--ambient` outputs compact format
+- [x] Cache reads and writes correctly
+- [x] Shell integration snippets work
 
----
+### Checkpoint: Config (Phase 5)
+- [x] TOML config loads from XDG path
+- [x] Named locations resolve correctly
+- [x] Shell completions generate
+
+### Checkpoint: Forecast (Phase 6)
+- [x] Multi-day forecast renders
+- [x] Hourly breakdown works
+- [x] Ambient forecast mode works
+
+### Checkpoint: Themes (Phase 7)
+- [x] `--list-themes` shows all 11 themes
+- [x] `--preview-theme` renders demo
+- [x] Config `theme` field works
+- [x] ANSI 256-color fallback works
+
+### Checkpoint: Final (Phase 8)
+- [x] `cargo test` passes 100%
+- [x] `cargo fmt --check` passes
+- [x] `cargo clippy` passes
+- [x] All acceptance criteria from SPEC.md met
 
 ## Risks and Mitigations
 
@@ -318,23 +185,24 @@ Build a weather CLI tool in Rust with beautiful terminal output. The project is 
 | ipapi.co rate limiting | Low | Only called once per run; fallback to manual input |
 | Unicode rendering issues in terminals | Low | Test in iTerm2 and macOS Terminal; use standard Unicode |
 | Cross-compilation for Linux | Low | Use Docker or GitHub Actions for Linux builds |
-
----
+| Theme colors look wrong on 256-color terminals | Low | ANSI fallback uses color cube mapping for best approximation |
 
 ## Open Questions
 
 - **Binary distribution:** How will users install? (Homebrew, direct download, cargo install?)
   - *Status:* Not in MVP scope — just `cargo build --release`
-- **Temperature unit detection:** Auto-detect from locale — should we use system locale or default to Celsius?
-  - *Decision:* Default to Celsius, add `--fahrenheit` flag for explicit override (MVP keeps it simple)
-- **Future features:** Extended forecast, multiple locations, caching
-  - *Status:* Out of scope for MVP — focused on 4-line output
-
----
+- **User-defined themes:** Allow loading theme files from config directory?
+  - *Status:* Deferred — static built-in themes cover the common cases
+- **Future features:** Extended forecast beyond 7 days, radar/map output, weather alerts
+  - *Status:* Out of scope — focused on core weather display
 
 ## Implementation Order
 
-1. Project Foundation (Tasks 1-3)
-2. API Integration (Tasks 4-5)
-3. CLI and Rendering (Tasks 6-9)
-4. Testing and Polish (Tasks 10-11)
+1. ~~Project Foundation (Tasks 1-3)~~
+2. ~~API Integration (Tasks 4-5)~~
+3. ~~CLI and Rendering (Tasks 6-9)~~
+4. ~~Ambient Mode and Caching (Tasks 10-11)~~
+5. ~~Configuration (Tasks 12-13)~~
+6. ~~Forecast (Task 14)~~
+7. ~~Color Themes (Tasks 15-17)~~
+8. ~~Testing and Polish (Tasks 18-19)~~
