@@ -3,6 +3,7 @@
 //! Uses Open-Meteo for weather data and ipapi.co for IP-based geolocation.
 //! Both APIs are free and don't require API keys.
 
+use crate::alerts::{Alert, NwsAlertsResponse};
 use crate::errors::AppError;
 use crate::forecast::{ForecastDisplay, ForecastResponse};
 use crate::geolocation::GeoResponse;
@@ -232,6 +233,52 @@ impl Client {
 
         Ok((item.latitude, item.longitude, location_name))
     }
+
+    /// Fetches active NWS weather alerts for a given coordinate.
+    ///
+    /// Returns a vector of Alert sorted by descending severity (most severe first).
+    /// Returns an empty vector for non-US locations (NWS returns empty features).
+    pub async fn get_alerts(&self, lat: f64, lon: f64) -> Result<Vec<Alert>, AppError> {
+        let url = format!(
+            "https://api.weather.gov/alerts/active?point={},{}",
+            lat, lon
+        );
+
+        let response = self
+            .inner
+            .get(&url)
+            .header("User-Agent", "termcast/0.1.0")
+            .send()
+            .await
+            .map_err(|e| AppError::network(&url, e))?;
+
+        if !response.status().is_success() {
+            return Err(AppError::weather(
+                &url,
+                &format!("Status: {}", response.status()),
+            ));
+        }
+
+        let text = response
+            .text()
+            .await
+            .map_err(|e| AppError::network(&url, e))?;
+        let nws_response: NwsAlertsResponse =
+            serde_json::from_str(&text).map_err(|e| AppError::parse(&url, "alerts", e))?;
+
+        // Filter out expired alerts and convert to display-ready Alert
+        let now = chrono::Utc::now();
+        let mut alerts: Vec<Alert> = nws_response
+            .features
+            .iter()
+            .filter_map(|f| Alert::from_feature(f, now))
+            .collect();
+
+        // Sort by descending severity (most severe first)
+        alerts.sort_by(|a, b| b.severity.cmp(&a.severity));
+
+        Ok(alerts)
+    }
 }
 
 impl Default for Client {
@@ -346,5 +393,150 @@ mod tests {
         assert!(forecast.hourly.is_some());
         let hourly = forecast.hourly.unwrap();
         assert_eq!(hourly.temperature, vec![10.0, 15.0]);
+    }
+
+    #[tokio::test]
+    async fn test_get_alerts_empty_response() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        let response_body = serde_json::json!({
+            "@context": [],
+            "features": []
+        });
+
+        Mock::given(method("GET"))
+            .and(path("/alerts/active"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = Client::new();
+        let url = format!("{}/alerts/active?point=35.5,-97.5", mock_server.uri());
+
+        let response = client.inner.get(&url).send().await.unwrap();
+        let text = response.text().await.unwrap();
+        let nws_response: NwsAlertsResponse = serde_json::from_str(&text).unwrap();
+        assert!(nws_response.features.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_alerts_single_alert() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        let response_body = serde_json::json!({
+            "features": [
+                {
+                    "properties": {
+                        "event": "Tornado Warning",
+                        "severity": "Extreme",
+                        "expires": "2025-12-31T18:00:00-06:00"
+                    }
+                }
+            ]
+        });
+
+        Mock::given(method("GET"))
+            .and(path("/alerts/active"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = Client::new();
+        let url = format!("{}/alerts/active?point=35.5,-97.5", mock_server.uri());
+
+        let response = client.inner.get(&url).send().await.unwrap();
+        let text = response.text().await.unwrap();
+        let nws_response: NwsAlertsResponse = serde_json::from_str(&text).unwrap();
+        assert_eq!(nws_response.features.len(), 1);
+        assert_eq!(nws_response.features[0].properties.event, "Tornado Warning");
+    }
+
+    #[tokio::test]
+    async fn test_get_alerts_multiple_alerts() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        let response_body = serde_json::json!({
+            "features": [
+                {
+                    "properties": {
+                        "event": "Flash Flood Warning",
+                        "severity": "Severe",
+                        "expires": "2025-12-31T20:00:00-05:00"
+                    }
+                },
+                {
+                    "properties": {
+                        "event": "Wind Advisory",
+                        "severity": "Minor",
+                        "expires": "2025-12-31T12:00:00-05:00"
+                    }
+                }
+            ]
+        });
+
+        Mock::given(method("GET"))
+            .and(path("/alerts/active"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = Client::new();
+        let url = format!("{}/alerts/active?point=35.5,-97.5", mock_server.uri());
+
+        let response = client.inner.get(&url).send().await.unwrap();
+        let text = response.text().await.unwrap();
+        let nws_response: NwsAlertsResponse = serde_json::from_str(&text).unwrap();
+        assert_eq!(nws_response.features.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_alerts_expired_filtering() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        let response_body = serde_json::json!({
+            "features": [
+                {
+                    "properties": {
+                        "event": "Old Warning",
+                        "severity": "Extreme",
+                        "expires": "2020-01-01T12:00:00-06:00"
+                    }
+                }
+            ]
+        });
+
+        Mock::given(method("GET"))
+            .and(path("/alerts/active"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
+            .mount(&mock_server)
+            .await;
+
+        let client = Client::new();
+        let url = format!("{}/alerts/active?point=35.5,-97.5", mock_server.uri());
+
+        let response = client.inner.get(&url).send().await.unwrap();
+        let text = response.text().await.unwrap();
+        let nws_response: NwsAlertsResponse = serde_json::from_str(&text).unwrap();
+
+        let now = chrono::Utc::now();
+        let alerts: Vec<Alert> = nws_response
+            .features
+            .iter()
+            .filter_map(|f| Alert::from_feature(f, now))
+            .collect();
+
+        assert!(alerts.is_empty());
     }
 }

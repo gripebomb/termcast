@@ -2,6 +2,7 @@
 //!
 //! Provides weather data fetching, caching, and rendering functionality.
 
+pub mod alerts;
 pub mod api;
 pub mod cache;
 pub mod config;
