@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//opt/homebrew/Cellar/rustup/1.29.0/bin/**)",
+      "Bash(rustup default:*)",
+      "Bash(rustup show:*)",
+      "Bash(/opt/homebrew/bin/rustup install:*)",
+      "Bash(export PATH=\"/opt/homebrew/Cellar/rustup/1.29.0/bin:$PATH\")",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(./target/release/termcast --help)",
+      "Bash(./target/release/termcast --location Oslo)"
+    ]
+  }
+}

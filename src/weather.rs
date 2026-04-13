@@ -37,7 +37,8 @@ pub struct CurrentWeather {
 }
 
 /// Daily forecast data.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
 pub struct DailyWeather {
     /// Dates for the forecast.
     #[allow(dead_code)]
@@ -52,9 +53,9 @@ pub struct DailyWeather {
     pub temperature_min: Vec<f64>,
 
     /// Weather codes for each day.
-    #[serde(rename = "weathercode")]
+    #[serde(rename = "weathercode", default)]
     #[allow(dead_code)]
-    pub weather_code: Vec<u32>,
+    pub weather_code: Option<Vec<u32>>,
 }
 
 /// Display-ready weather data for rendering.
