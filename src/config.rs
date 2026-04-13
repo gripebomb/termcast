@@ -26,6 +26,8 @@ pub struct Defaults {
     pub units: String,
     #[serde(default = "Defaults::default_cache_ttl")]
     pub cache_ttl: u64,
+    #[serde(default)]
+    pub theme: String,
 }
 
 impl Default for Defaults {
@@ -34,6 +36,7 @@ impl Default for Defaults {
             default_location: Self::default_location(),
             units: Self::default_units(),
             cache_ttl: Self::default_cache_ttl(),
+            theme: String::new(),
         }
     }
 }
@@ -312,5 +315,27 @@ city = "San Francisco"
         assert!(path.to_string_lossy().contains(".config"));
         assert!(path.to_string_lossy().contains("termcast"));
         assert_eq!(path.file_name().unwrap(), "config.toml");
+    }
+
+    // --- Theme field tests ---
+
+    #[test]
+    fn test_theme_field_defaults_to_empty() {
+        let config = Config::default();
+        assert_eq!(config.defaults.theme, "");
+    }
+
+    #[test]
+    fn test_theme_field_parsed_from_toml() {
+        let toml = "[defaults]\ntheme = \"dracula\"\n";
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.defaults.theme, "dracula");
+    }
+
+    #[test]
+    fn test_theme_field_missing_gets_empty_string() {
+        let toml = "[defaults]\nunits = \"celsius\"\n";
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.defaults.theme, "");
     }
 }
