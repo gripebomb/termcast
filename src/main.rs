@@ -759,13 +759,13 @@ longitude = 10.75
 
     #[test]
     fn test_preview_theme_flag() {
-        let args = Args::parse_from(&["termcast", "--preview-theme", "dracula"]);
+        let args = Args::parse_from(["termcast", "--preview-theme", "dracula"]);
         assert_eq!(args.preview_theme, Some("dracula".to_string()));
     }
 
     #[test]
     fn test_preview_theme_flag_missing() {
-        let args = Args::parse_from(&["termcast"]);
+        let args = Args::parse_from(["termcast"]);
         assert!(!args.list_themes);
         assert!(args.preview_theme.is_none());
     }

@@ -5,6 +5,11 @@ edition = "2021"
 description = "A beautiful weather CLI tool for terminal enthusiasts"
 license = "MIT"
 authors = ["TermCast Team"]
+repository = "https://github.com/gripebomb/termcast"
+homepage = "https://github.com/gripebomb/termcast"
+documentation = "https://github.com/gripebomb/termcast#readme"
+keywords = ["weather", "cli", "terminal", "forecast"]
+categories = ["command-line-utilities"]
 
 [lib]
 name = "termcast"
