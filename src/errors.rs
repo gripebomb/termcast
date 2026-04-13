@@ -38,6 +38,38 @@ pub enum AppError {
     /// Invalid command-line arguments.
     #[error("Invalid argument: {0}")]
     InvalidArg(String),
+
+    /// Cache read error.
+    #[error("Failed to read cache from {path}: {source}")]
+    CacheRead {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// Cache write error.
+    #[error("Failed to write cache to {path}: {source}")]
+    CacheWrite {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// Cache parse error (invalid JSON).
+    #[error("Failed to parse cache from {path}: {source}")]
+    CacheParse {
+        path: String,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    /// Cache serialization error.
+    #[error("Failed to serialize cache for {path}: {source}")]
+    CacheSerialize {
+        path: String,
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 impl AppError {
@@ -76,10 +108,40 @@ impl AppError {
     pub fn invalid_arg(msg: impl Into<String>) -> Self {
         Self::InvalidArg(msg.into())
     }
-}
 
-impl From<std::io::Error> for AppError {
-    fn from(e: std::io::Error) -> Self {
-        Self::InvalidArg(format!("IO error: {}", e))
+    /// Creates a cache read error.
+    #[allow(dead_code)]
+    pub fn cache_read(path: &std::path::Path, source: std::io::Error) -> Self {
+        Self::CacheRead {
+            path: path.to_string_lossy().to_string(),
+            source,
+        }
+    }
+
+    /// Creates a cache write error.
+    #[allow(dead_code)]
+    pub fn cache_write(path: &std::path::Path, source: std::io::Error) -> Self {
+        Self::CacheWrite {
+            path: path.to_string_lossy().to_string(),
+            source,
+        }
+    }
+
+    /// Creates a cache parse error.
+    #[allow(dead_code)]
+    pub fn cache_parse(path: &std::path::Path, source: serde_json::Error) -> Self {
+        Self::CacheParse {
+            path: path.to_string_lossy().to_string(),
+            source,
+        }
+    }
+
+    /// Creates a cache serialization error.
+    #[allow(dead_code)]
+    pub fn cache_serialize(path: &std::path::Path, source: serde_json::Error) -> Self {
+        Self::CacheSerialize {
+            path: path.to_string_lossy().to_string(),
+            source,
+        }
     }
 }

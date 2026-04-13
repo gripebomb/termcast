@@ -12,10 +12,10 @@ use std::io::{self, Write};
 /// Renders weather data to the terminal with styled output.
 ///
 /// Output format (80-column centered):
-/// ```
-///      ☁ 14°C Oslo
-///    Feels 11°
-///    High 17° · Low 8°
+/// ```text
+///      * 14C Oslo
+///    Feels 11C
+///    High 17C . Low 8C
 ///    Clear until evening
 /// ```
 pub fn render_weather(weather: &WeatherDisplay, description: &str) -> io::Result<()> {

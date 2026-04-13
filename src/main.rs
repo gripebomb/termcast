@@ -3,14 +3,8 @@
 //! Provides weather information with aesthetic terminal output.
 //! Works out of the box with auto-detected location or with `--location` flag.
 
-mod api;
-mod errors;
-mod geolocation;
-mod renderer;
-mod weather;
-
 use clap::Parser;
-use errors::AppError;
+use termcast::{api::Client, errors::AppError, renderer, weather};
 
 /// Command-line arguments for TermCast.
 #[derive(Parser, Debug)]
@@ -37,7 +31,7 @@ async fn main() {
 
 async fn run() -> Result<(), AppError> {
     let args = Args::parse();
-    let client = api::Client::new();
+    let client = Client::new();
 
     // Get location (either from CLI or auto-detect)
     let (latitude, longitude, location_name) = if let Some(ref loc) = args.location {
@@ -49,22 +43,24 @@ async fn run() -> Result<(), AppError> {
     };
 
     // Get weather data
-    let weather = client
+    let weather_data = client
         .get_weather(latitude, longitude, &location_name)
         .await?;
 
     // Get weather description
-    let description = weather::weather_description(weather.weather_code);
+    let description = weather::weather_description(weather_data.weather_code);
 
     // Render to terminal
-    renderer::render_weather(&weather, description)?;
+    renderer::render_weather(&weather_data, description)
+        .map_err(|e| AppError::invalid_arg(format!("Render error: {}", e)))?;
 
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use clap::Parser;
+    use crate::Args;
 
     #[test]
     fn test_args_parsing_no_location() {
