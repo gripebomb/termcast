@@ -9,4 +9,5 @@ pub mod errors;
 pub mod forecast;
 pub mod geolocation;
 pub mod renderer;
+pub mod theme;
 pub mod weather;
