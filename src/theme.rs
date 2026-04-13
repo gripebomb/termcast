@@ -189,6 +189,54 @@ pub fn builtin_themes() -> &'static [Theme] {
     &BUILTIN_THEMES
 }
 
+impl ThemeColors {
+    /// Converts RGB colors to ANSI 256-color values for terminals
+    /// without true-color support.
+    pub fn to_ansi256(&self) -> ThemeColors {
+        ThemeColors {
+            text: rgb_to_ansi256(self.text),
+            dimmed: rgb_to_ansi256(self.dimmed),
+            temp_high: rgb_to_ansi256(self.temp_high),
+            temp_low: rgb_to_ansi256(self.temp_low),
+            precip_high: rgb_to_ansi256(self.precip_high),
+            precip_medium: rgb_to_ansi256(self.precip_medium),
+        }
+    }
+}
+
+/// Converts a Color to ANSI 256-color index. Non-RGB colors pass through.
+fn rgb_to_ansi256(color: Color) -> Color {
+    let (r, g, b) = match color {
+        Color::Rgb { r, g, b } => (r, g, b),
+        other => return other,
+    };
+
+    // Check if it matches a greyscale ramp (232-255)
+    if r == g && g == b && r < 8 {
+        return Color::AnsiValue(16);
+    }
+    if r == g && g == b && r > 248 {
+        return Color::AnsiValue(231);
+    }
+    if r == g && g == b {
+        return Color::AnsiValue(232 + ((r - 8) as u16 * 24 / 247) as u8);
+    }
+
+    // Map to 6x6x6 color cube (16-231)
+    let ri = (r as u16 * 5 / 255) as u8;
+    let gi = (g as u16 * 5 / 255) as u8;
+    let bi = (b as u16 * 5 / 255) as u8;
+    Color::AnsiValue(16 + 36 * ri + 6 * gi + bi)
+}
+
+/// Checks if the terminal supports true-color via COLORTERM env var.
+pub fn supports_truecolor() -> bool {
+    match std::env::var("COLORTERM") {
+        Ok(val) => val == "truecolor" || val == "24bit",
+        Err(_) => false,
+    }
+}
+
 /// Normalizes a theme name: lowercase, underscores to hyphens.
 fn normalize_name(name: &str) -> String {
     name.to_lowercase().replace('_', "-")
@@ -341,5 +389,37 @@ mod tests {
     fn test_alias_catppuccin_latte() {
         let colors = resolve_theme("catppuccin-latte");
         assert!(matches!(colors.text, Color::Rgb { r: 76, g: 79, b: 105 }));
+    }
+
+    #[test]
+    fn test_to_ansi256_converts_rgb() {
+        let colors = default_colors();
+        let ansi = colors.to_ansi256();
+        assert!(matches!(ansi.text, Color::AnsiValue(_)));
+        assert!(matches!(ansi.temp_high, Color::AnsiValue(_)));
+    }
+
+    #[test]
+    fn test_rgb_to_ansi256_white() {
+        let result = rgb_to_ansi256(Color::Rgb { r: 255, g: 255, b: 255 });
+        assert!(matches!(result, Color::AnsiValue(231)));
+    }
+
+    #[test]
+    fn test_rgb_to_ansi256_black() {
+        let result = rgb_to_ansi256(Color::Rgb { r: 0, g: 0, b: 0 });
+        assert!(matches!(result, Color::AnsiValue(16)));
+    }
+
+    #[test]
+    fn test_rgb_to_ansi256_cyan() {
+        let result = rgb_to_ansi256(Color::Rgb { r: 0, g: 255, b: 255 });
+        assert!(matches!(result, Color::AnsiValue(51)));
+    }
+
+    #[test]
+    fn test_rgb_to_ansi256_non_rgb_passthrough() {
+        let result = rgb_to_ansi256(Color::DarkGrey);
+        assert!(matches!(result, Color::DarkGrey));
     }
 }
