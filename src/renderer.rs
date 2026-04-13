@@ -2,6 +2,7 @@
 //!
 //! Uses crossterm for cross-platform terminal styling and ANSI output.
 
+use crate::alerts::Alert;
 use crate::forecast::ForecastDisplay;
 use crate::theme::ThemeColors;
 use crate::weather::WeatherDisplay;
@@ -92,6 +93,59 @@ pub fn render_error(message: &str) -> io::Result<()> {
     stdout.queue(Print("Error: "))?;
     stdout.queue(SetForegroundColor(Color::White))?;
     stdout.queue(Print(message))?;
+    stdout.queue(Print("\r\n"))?;
+    stdout.flush()
+}
+
+/// Renders a centered alert line with severity-based color and style.
+///
+/// Output format: `{icon} {event} until {time}` centered in 80 columns.
+/// When `expires_time` is None, format is `{icon} {event}` with no "until".
+/// Colors: Warning = bold red (255,59,48), Watch = yellow (255,204,0),
+/// Advisory = dim yellow (204,170,0).
+pub fn render_alert_line(alert: &Alert) -> io::Result<()> {
+    let mut stdout = io::stdout();
+    let terminal_width: usize = 80;
+
+    // Build the warning icon (⚠) + event + optional time
+    let icon = "⚠";
+    let event = &alert.event;
+    let display_line = if let Some(time) = alert.expires_time.as_ref() {
+        format!("{} {} until {}", icon, event, time)
+    } else {
+        format!("{} {}", icon, event)
+    };
+
+    let padding = (terminal_width.saturating_sub(display_line.len())) / 2;
+
+    // Apply severity-based color and style
+    match alert.severity {
+        crate::alerts::AlertSeverity::Warning => {
+            stdout.queue(SetAttribute(Attribute::Bold))?;
+            stdout.queue(SetForegroundColor(Color::Rgb {
+                r: 255,
+                g: 59,
+                b: 48,
+            }))?;
+        }
+        crate::alerts::AlertSeverity::Watch => {
+            stdout.queue(SetForegroundColor(Color::Rgb {
+                r: 255,
+                g: 204,
+                b: 0,
+            }))?;
+        }
+        crate::alerts::AlertSeverity::Advisory => {
+            stdout.queue(SetForegroundColor(Color::Rgb {
+                r: 204,
+                g: 170,
+                b: 0,
+            }))?;
+        }
+    }
+
+    stdout.queue(Print(format!("{}{}", " ".repeat(padding), display_line)))?;
+    stdout.queue(SetAttribute(Attribute::Reset))?;
     stdout.queue(Print("\r\n"))?;
     stdout.flush()
 }
@@ -471,6 +525,52 @@ mod tests {
             hourly: vec![],
         };
         let result = output_ambient_forecast(&display);
+        assert!(result.is_ok());
+    }
+
+    // --- Alert rendering tests ---
+
+    #[test]
+    fn test_render_alert_line_warning() {
+        let alert = crate::alerts::Alert {
+            severity: crate::alerts::AlertSeverity::Warning,
+            event: "Tornado Warning".to_string(),
+            expires_time: Some("6:00 PM".to_string()),
+        };
+        let result = render_alert_line(&alert);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_render_alert_line_watch() {
+        let alert = crate::alerts::Alert {
+            severity: crate::alerts::AlertSeverity::Watch,
+            event: "Flash Flood Watch".to_string(),
+            expires_time: Some("8:00 PM".to_string()),
+        };
+        let result = render_alert_line(&alert);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_render_alert_line_advisory() {
+        let alert = crate::alerts::Alert {
+            severity: crate::alerts::AlertSeverity::Advisory,
+            event: "Wind Advisory".to_string(),
+            expires_time: Some("12:00 AM".to_string()),
+        };
+        let result = render_alert_line(&alert);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_render_alert_line_no_expiry() {
+        let alert = crate::alerts::Alert {
+            severity: crate::alerts::AlertSeverity::Warning,
+            event: "Special Weather Statement".to_string(),
+            expires_time: None,
+        };
+        let result = render_alert_line(&alert);
         assert!(result.is_ok());
     }
 }
