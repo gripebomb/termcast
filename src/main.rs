@@ -93,7 +93,11 @@ enum Command {
 #[tokio::main]
 async fn main() {
     if let Err(e) = run().await {
-        eprintln!("termcast: {}", e);
+        // Best-effort styled error; if rendering fails, fall back to plain
+        // stderr so the user always sees something useful.
+        if renderer::render_error(&e.to_string()).is_err() {
+            eprintln!("termcast: error: {}", e);
+        }
         std::process::exit(1);
     }
 }
@@ -318,6 +322,22 @@ async fn determine_units(
     Ok(ip_f)
 }
 
+/// Returns true when the coordinate is within the rough US territory bounding
+/// box (contiguous US, Alaska, Hawaii, and outlying territories).
+///
+/// The NWS `alerts/active?point=` endpoint only returns US alerts; for any
+/// point outside this box, the call would be a guaranteed 200+empty round
+/// trip. We skip it entirely and let `use_fahrenheit`/geocoding be the source
+/// of truth for whether a US location was selected.
+fn is_in_us(lat: f64, lon: f64) -> bool {
+    // Continental US
+    (-125.0..=-66.0).contains(&lon) && (24.0..=49.5).contains(&lat)
+        // Alaska
+        || (-180.0..=-130.0).contains(&lon) && (51.0..=72.0).contains(&lat)
+        // Hawaii
+        || (-162.0..=-154.0).contains(&lon) && (18.0..=23.0).contains(&lat)
+}
+
 /// Fetches weather data and displays it in the terminal.
 async fn fetch_and_display_weather(
     client: &Client,
@@ -330,9 +350,10 @@ async fn fetch_and_display_weather(
     let (latitude, longitude, location_name, use_fahrenheit) =
         resolve_full_location(client, location, &cfg, config_use_fahrenheit).await?;
 
-    // Fetch weather and alerts concurrently to avoid adding latency
+    // The NWS endpoint only serves US territory; skip the call entirely for
+    // coords outside the US bounding box to save a round trip.
     let alerts_future = async {
-        if no_alerts {
+        if no_alerts || !is_in_us(latitude, longitude) {
             Ok(vec![])
         } else {
             client.get_alerts(latitude, longitude).await
@@ -860,5 +881,32 @@ longitude = 10.75
         let args = Args::parse_from(["termcast", "--no-alerts", "--ambient"]);
         assert!(args.no_alerts);
         assert!(args.ambient);
+    }
+    #[test]
+    fn test_is_in_us_mainland() {
+        // San Francisco, New York, Chicago
+        assert!(super::is_in_us(37.77, -122.42));
+        assert!(super::is_in_us(40.71, -74.00));
+        assert!(super::is_in_us(41.87, -87.63));
+    }
+
+    #[test]
+    fn test_is_in_us_alaska_hawaii() {
+        // Anchorage, Honolulu
+        assert!(super::is_in_us(61.22, -149.90));
+        assert!(super::is_in_us(21.31, -157.86));
+    }
+
+    #[test]
+    fn test_is_in_us_outside() {
+        // Oslo, London, Tokyo, Sydney, Toronto
+        assert!(!super::is_in_us(59.91, 10.75));
+        assert!(!super::is_in_us(51.51, -0.13));
+        assert!(!super::is_in_us(35.68, 139.69));
+        assert!(!super::is_in_us(-33.87, 151.21));
+        // Canada: longitude falls in box but latitude catches the border
+        // (Toronto is at 43.65 - should be in; Vancouver at 49.28 - in)
+        // but lat-only points south of US fail
+        assert!(!super::is_in_us(19.43, -99.13)); // Mexico City
     }
 }

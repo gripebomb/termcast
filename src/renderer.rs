@@ -86,15 +86,20 @@ pub fn render_weather(
     stdout.flush()
 }
 
-/// Renders a styled error message.
+/// Renders a styled error message to stderr.
+///
+/// Uses red for the "termcast: error: " prefix and white for the message body
+/// to match the aesthetic of the rest of the renderer. Writes to stderr so
+/// the message stays out of the data stream and is appropriate for shell
+/// integration.
 pub fn render_error(message: &str) -> io::Result<()> {
-    let mut stdout = io::stdout();
-    stdout.queue(SetForegroundColor(Color::Red))?;
-    stdout.queue(Print("Error: "))?;
-    stdout.queue(SetForegroundColor(Color::White))?;
-    stdout.queue(Print(message))?;
-    stdout.queue(Print("\r\n"))?;
-    stdout.flush()
+    let mut stderr = io::stderr();
+    stderr.queue(SetForegroundColor(Color::Red))?;
+    stderr.queue(Print("termcast: error: "))?;
+    stderr.queue(SetForegroundColor(Color::White))?;
+    stderr.queue(Print(message))?;
+    stderr.queue(Print("\r\n"))?;
+    stderr.flush()
 }
 
 /// Renders a centered alert line with severity-based color and style.

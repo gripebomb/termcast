@@ -72,12 +72,11 @@ cargo run --release
 # Config
 ./target/release/termcast --config /path/to/config.toml
 ./target/release/termcast --list-locations
+# Suppress NWS severe weather alerts
+./target/release/termcast --no-alerts
 
 # Shell integration
 ./target/release/termcast --install bash
-./target/release/termcast --install zsh
-./target/release/termcast --install tmux
-./target/release/termcast --install
 
 # Shell completions
 ./target/release/termcast completions bash
@@ -186,11 +185,34 @@ The theme system uses 6 semantic color slots that decouple color choices from re
 
 ### Terminal Compatibility
 
+
+
 - True-color (RGB) when `COLORTERM=truecolor|24bit`
 - ANSI 256-color fallback via 6x6x6 color cube mapping
 - Automatic detection at runtime
 
-## Testing Strategy
+## Severe Weather Alerts
+
+For US locations, TermCast fetches active severe weather alerts from the
+[NWS API](https://api.weather.gov/) `alerts/active?point={lat},{lon}` endpoint.
+The most severe active alert is shown as a single line below the regular
+weather output. Alert colors are fixed (not themeable) and severity-mapped:
+
+| Severity | Color | Style |
+|----------|-------|-------|
+| Warning (Extreme, Severe) | Red `(255, 59, 48)` | Bold |
+| Watch (Moderate) | Yellow `(255, 204, 0)` | Plain |
+| Advisory (Minor, unknown) | Dim yellow `(204, 170, 0)` | Plain |
+
+In ambient mode, alerts are surfaced as a `⚠` (warning) or `⚡` (watch/advisory)
+suffix on the single-line output. The `forecast` subcommand does not display
+alerts. Use `--no-alerts` to disable fetching for non-US users or slow networks.
+
+The NWS endpoint is only called for coordinates inside the rough US territory
+bounding box (contiguous US, Alaska, Hawaii); locations outside the box skip
+the call entirely. Failures are silent — alert display never blocks weather
+output.
+
 
 - **Unit tests** on parsing logic (mock JSON strings)
 - **Unit tests** on theme resolution (case, aliases, fallbacks)
