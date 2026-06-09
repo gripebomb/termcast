@@ -623,11 +623,9 @@ mod tests {
         };
 
         let entries = hourly.filter_notable();
-        let has_rain_annotation = entries.iter().any(|e| {
-            e.annotation
-                .as_ref()
-                .map_or(false, |a| a.contains("Rain"))
-        });
+        let has_rain_annotation = entries
+            .iter()
+            .any(|e| e.annotation.as_ref().is_some_and(|a| a.contains("Rain")));
         assert!(has_rain_annotation, "Should have a rain-related annotation");
     }
 

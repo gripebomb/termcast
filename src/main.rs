@@ -221,7 +221,9 @@ fn resolve_theme_colors(theme_name: &str) -> termcast::theme::ThemeColors {
 
 /// Adapts theme colors for the terminal: falls back to ANSI 256
 /// when COLORTERM indicates no true-color support.
-fn adapt_colors_for_terminal(colors: &termcast::theme::ThemeColors) -> termcast::theme::ThemeColors {
+fn adapt_colors_for_terminal(
+    colors: &termcast::theme::ThemeColors,
+) -> termcast::theme::ThemeColors {
     if theme::supports_truecolor() {
         termcast::theme::ThemeColors {
             text: colors.text,
@@ -404,7 +406,12 @@ async fn run_ambient_mode(
         // Check if cache is fresh
         if cache::is_cache_fresh(&entry, ttl_secs) {
             // Cache is fresh - output immediately (skip alerts when using cache)
-            output_ambient_weather(entry.weather_code, entry.temperature, entry.use_fahrenheit, None);
+            output_ambient_weather(
+                entry.weather_code,
+                entry.temperature,
+                entry.use_fahrenheit,
+                None,
+            );
             return Ok(());
         }
     }
@@ -460,12 +467,7 @@ fn output_ambient_weather(
 }
 
 /// Runs the forecast subcommand: resolve location, fetch forecast, render output.
-async fn run_forecast(
-    args: &Args,
-    days: u32,
-    hourly: bool,
-    ambient: bool,
-) -> Result<(), AppError> {
+async fn run_forecast(args: &Args, days: u32, hourly: bool, ambient: bool) -> Result<(), AppError> {
     let config_path = args.config.as_deref().map(Path::new);
     let cfg = config::load_config(config_path);
     let client = Client::new();
@@ -473,9 +475,13 @@ async fn run_forecast(
     let config_use_fahrenheit = cfg.resolve_units();
     let location_query = resolve_location_query(args, &cfg);
 
-    let (latitude, longitude, location_name, use_fahrenheit) =
-        resolve_full_location(&client, location_query.as_deref(), &cfg, config_use_fahrenheit)
-            .await?;
+    let (latitude, longitude, location_name, use_fahrenheit) = resolve_full_location(
+        &client,
+        location_query.as_deref(),
+        &cfg,
+        config_use_fahrenheit,
+    )
+    .await?;
 
     let display = client
         .get_forecast(
@@ -595,84 +601,84 @@ mod tests {
 
     #[test]
     fn test_args_parsing_no_location() {
-        let args = Args::parse_from(&["termcast"]);
+        let args = Args::parse_from(["termcast"]);
         assert!(args.location.is_none());
         assert!(args.at.is_none());
     }
 
     #[test]
     fn test_args_parsing_with_location() {
-        let args = Args::parse_from(&["termcast", "-l", "Oslo"]);
+        let args = Args::parse_from(["termcast", "-l", "Oslo"]);
         assert_eq!(args.location, Some("Oslo".to_string()));
         assert!(args.at.is_none());
     }
 
     #[test]
     fn test_args_parsing_long_form() {
-        let args = Args::parse_from(&["termcast", "--location", "San Francisco, CA"]);
+        let args = Args::parse_from(["termcast", "--location", "San Francisco, CA"]);
         assert_eq!(args.location, Some("San Francisco, CA".to_string()));
     }
 
     #[test]
     fn test_args_ambient_mode() {
-        let args = Args::parse_from(&["termcast", "--ambient"]);
+        let args = Args::parse_from(["termcast", "--ambient"]);
         assert!(args.ambient);
-        assert!(!args.location.is_some());
+        assert!(args.location.is_none());
     }
 
     #[test]
     fn test_args_ambient_with_location() {
-        let args = Args::parse_from(&["termcast", "--ambient", "--location", "Oslo"]);
+        let args = Args::parse_from(["termcast", "--ambient", "--location", "Oslo"]);
         assert!(args.ambient);
         assert_eq!(args.location, Some("Oslo".to_string()));
     }
 
     #[test]
     fn test_args_cache_ttl_default() {
-        let args = Args::parse_from(&["termcast"]);
+        let args = Args::parse_from(["termcast"]);
         assert!(args.cache_ttl.is_none());
     }
 
     #[test]
     fn test_args_cache_ttl_custom() {
-        let args = Args::parse_from(&["termcast", "--cache-ttl", "30"]);
+        let args = Args::parse_from(["termcast", "--cache-ttl", "30"]);
         assert_eq!(args.cache_ttl, Some(30));
     }
 
     #[test]
     fn test_args_install_bash() {
-        let args = Args::parse_from(&["termcast", "--install", "bash"]);
+        let args = Args::parse_from(["termcast", "--install", "bash"]);
         assert_eq!(args.install, Some("bash".to_string()));
     }
 
     #[test]
     fn test_args_install_all() {
-        let args = Args::parse_from(&["termcast", "--install"]);
+        let args = Args::parse_from(["termcast", "--install"]);
         assert_eq!(args.install, Some("all".to_string()));
     }
 
     #[test]
     fn test_args_config_flag() {
-        let args = Args::parse_from(&["termcast", "--config", "/tmp/myconfig.toml"]);
+        let args = Args::parse_from(["termcast", "--config", "/tmp/myconfig.toml"]);
         assert_eq!(args.config, Some("/tmp/myconfig.toml".to_string()));
     }
 
     #[test]
     fn test_args_at_flag() {
-        let args = Args::parse_from(&["termcast", "--at", "home"]);
+        let args = Args::parse_from(["termcast", "--at", "home"]);
         assert_eq!(args.at, Some("home".to_string()));
         assert!(args.location.is_none());
     }
 
     #[test]
     fn test_args_list_locations() {
-        let args = Args::parse_from(&["termcast", "--list-locations"]);
+        let args = Args::parse_from(["termcast", "--list-locations"]);
         assert!(args.list_locations);
     }
 
     #[test]
     fn test_resolve_location_query_location_flag_wins() {
-        let args = Args::parse_from(&["termcast", "--location", "Oslo", "--at", "home"]);
+        let args = Args::parse_from(["termcast", "--location", "Oslo", "--at", "home"]);
         let cfg = termcast::config::Config::default();
         let result = super::resolve_location_query(&args, &cfg);
         assert_eq!(result, Some("Oslo".to_string()));
@@ -680,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_resolve_location_query_at_flag_fallback() {
-        let args = Args::parse_from(&["termcast", "--at", "Chicago"]);
+        let args = Args::parse_from(["termcast", "--at", "Chicago"]);
         let cfg = termcast::config::Config::default();
         let result = super::resolve_location_query(&args, &cfg);
         assert_eq!(result, Some("Chicago".to_string()));
@@ -688,7 +694,7 @@ mod tests {
 
     #[test]
     fn test_resolve_location_query_at_flag_resolves_saved() {
-        let args = Args::parse_from(&["termcast", "--at", "home"]);
+        let args = Args::parse_from(["termcast", "--at", "home"]);
         let toml = r#"
 [locations.home]
 city = "Oslo"
@@ -702,7 +708,7 @@ longitude = 10.75
 
     #[test]
     fn test_resolve_location_query_config_default() {
-        let args = Args::parse_from(&["termcast"]);
+        let args = Args::parse_from(["termcast"]);
         let toml = "[defaults]\ndefault_location = \"Oslo\"\n";
         let cfg: termcast::config::Config = toml::from_str(toml).unwrap();
         let result = super::resolve_location_query(&args, &cfg);
@@ -711,7 +717,7 @@ longitude = 10.75
 
     #[test]
     fn test_resolve_location_query_config_default_auto() {
-        let args = Args::parse_from(&["termcast"]);
+        let args = Args::parse_from(["termcast"]);
         let cfg = termcast::config::Config::default();
         let result = super::resolve_location_query(&args, &cfg);
         assert!(result.is_none());
@@ -721,7 +727,7 @@ longitude = 10.75
 
     #[test]
     fn test_forecast_default_args() {
-        let args = Args::parse_from(&["termcast", "forecast"]);
+        let args = Args::parse_from(["termcast", "forecast"]);
         match args.command {
             Some(super::Command::Forecast {
                 days,
@@ -738,7 +744,7 @@ longitude = 10.75
 
     #[test]
     fn test_forecast_days() {
-        let args = Args::parse_from(&["termcast", "forecast", "--days", "3"]);
+        let args = Args::parse_from(["termcast", "forecast", "--days", "3"]);
         match args.command {
             Some(super::Command::Forecast { days, .. }) => assert_eq!(days, 3),
             _ => panic!("Expected Forecast subcommand"),
@@ -747,7 +753,7 @@ longitude = 10.75
 
     #[test]
     fn test_forecast_hourly() {
-        let args = Args::parse_from(&["termcast", "forecast", "--hourly"]);
+        let args = Args::parse_from(["termcast", "forecast", "--hourly"]);
         match args.command {
             Some(super::Command::Forecast { hourly, .. }) => assert!(hourly),
             _ => panic!("Expected Forecast subcommand"),
@@ -756,7 +762,7 @@ longitude = 10.75
 
     #[test]
     fn test_forecast_ambient() {
-        let args = Args::parse_from(&["termcast", "forecast", "--ambient"]);
+        let args = Args::parse_from(["termcast", "forecast", "--ambient"]);
         match args.command {
             Some(super::Command::Forecast { ambient, .. }) => assert!(ambient),
             _ => panic!("Expected Forecast subcommand"),
@@ -765,7 +771,9 @@ longitude = 10.75
 
     #[test]
     fn test_forecast_with_location() {
-        let args = Args::parse_from(&["termcast", "-l", "Oslo", "forecast", "--days", "7", "--hourly"]);
+        let args = Args::parse_from([
+            "termcast", "-l", "Oslo", "forecast", "--days", "7", "--hourly",
+        ]);
         assert_eq!(args.location, Some("Oslo".to_string()));
         match args.command {
             Some(super::Command::Forecast {
@@ -783,7 +791,7 @@ longitude = 10.75
 
     #[test]
     fn test_forecast_with_at() {
-        let args = Args::parse_from(&["termcast", "--at", "home", "forecast"]);
+        let args = Args::parse_from(["termcast", "--at", "home", "forecast"]);
         assert_eq!(args.at, Some("home".to_string()));
         match args.command {
             Some(super::Command::Forecast { .. }) => {}
@@ -793,7 +801,7 @@ longitude = 10.75
 
     #[test]
     fn test_completions_still_works() {
-        let args = Args::parse_from(&["termcast", "completions", "bash"]);
+        let args = Args::parse_from(["termcast", "completions", "bash"]);
         match args.command {
             Some(super::Command::Completions { shell }) => {
                 assert_eq!(shell, "bash");
@@ -804,14 +812,14 @@ longitude = 10.75
 
     #[test]
     fn test_no_subcommand_still_works() {
-        let args = Args::parse_from(&["termcast", "-l", "Oslo"]);
+        let args = Args::parse_from(["termcast", "-l", "Oslo"]);
         assert!(args.command.is_none());
         assert_eq!(args.location, Some("Oslo".to_string()));
     }
 
     #[test]
     fn test_list_themes_flag() {
-        let args = Args::parse_from(&["termcast", "--list-themes"]);
+        let args = Args::parse_from(["termcast", "--list-themes"]);
         assert!(args.list_themes);
     }
 
@@ -830,26 +838,26 @@ longitude = 10.75
 
     #[test]
     fn test_no_alerts_flag_default() {
-        let args = Args::parse_from(&["termcast"]);
+        let args = Args::parse_from(["termcast"]);
         assert!(!args.no_alerts);
     }
 
     #[test]
     fn test_no_alerts_flag_set() {
-        let args = Args::parse_from(&["termcast", "--no-alerts"]);
+        let args = Args::parse_from(["termcast", "--no-alerts"]);
         assert!(args.no_alerts);
     }
 
     #[test]
     fn test_no_alerts_with_location() {
-        let args = Args::parse_from(&["termcast", "--no-alerts", "-l", "Tulsa, OK"]);
+        let args = Args::parse_from(["termcast", "--no-alerts", "-l", "Tulsa, OK"]);
         assert!(args.no_alerts);
         assert_eq!(args.location, Some("Tulsa, OK".to_string()));
     }
 
     #[test]
     fn test_no_alerts_with_ambient() {
-        let args = Args::parse_from(&["termcast", "--no-alerts", "--ambient"]);
+        let args = Args::parse_from(["termcast", "--no-alerts", "--ambient"]);
         assert!(args.no_alerts);
         assert!(args.ambient);
     }

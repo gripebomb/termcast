@@ -3,7 +3,7 @@
 //! Uses the NWS API `/alerts/active?point={lat},{lon}` endpoint which returns
 //! GeoJSON FeatureCollection with alert features.
 
-use chrono::{DateTime, Utc, NaiveDateTime, Timelike};
+use chrono::{DateTime, NaiveDateTime, Timelike, Utc};
 use serde::Deserialize;
 
 /// Response from the NWS alerts endpoint (GeoJSON FeatureCollection).
@@ -88,7 +88,8 @@ pub fn format_expiry(expires: &Option<String>) -> Option<String> {
 
     // Try date-only format
     if let Ok(_date) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        return Some(format!("{}:00 {}",
+        return Some(format!(
+            "{}:00 {}",
             12, // noon as fallback
             "PM"
         ));
